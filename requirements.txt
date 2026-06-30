@@ -6,3 +6,8 @@ python-dotenv
 loguru
 beautifulsoup4
 markdownify
+cachetools
+
+# --- 开发 / 测试依赖 (pip install -r requirements-dev.txt) ---
+# pytest
+# pytest-asyncio

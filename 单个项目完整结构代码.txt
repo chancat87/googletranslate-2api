@@ -30,7 +30,7 @@ NGINX_PORT=8088
 # --- Google Translate 凭证 (必须设置) ---
 # 请从浏览器开发者工具的网络请求中找到 `translateHtml` 请求，
 # 并复制其请求头中的 `x-goog-api-key` 值。
-GOOGLE_API_KEY="AIzaSyATBXajvzQLTDHEQbcpq0Ihe0vWDHmO520"
+GOOGLE_API_KEY="在这里填入你的谷歌翻译_API_Key"
 
 --- 文件路径: .env.example ---
 
@@ -52,7 +52,7 @@ NGINX_PORT=8088
 # --- Google Translate 凭证 (必须设置) ---
 # 请从浏览器开发者工具的网络请求中找到 `translateHtml` 请求，
 # 并复制其请求头中的 `x-goog-api-key` 值。
-GOOGLE_API_KEY="AIzaSyATBXajvzQLTDHEQbcpq0Ihe0vWDHmO520"
+GOOGLE_API_KEY="在这里填入你的谷歌翻译_API_Key"
 
 
 --- 文件路径: Dockerfile ---

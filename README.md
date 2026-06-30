@@ -24,10 +24,12 @@
 ## 🎯 核心优势
 
 *   **💰 完全免费**：基于谷歌翻译网页版 API，提供高质量的翻译服务，无需支付商业 API 费用
-*   **🔌 无缝兼容**：完美模拟 OpenAI 的 `chat/completions` 接口，支持流式响应（SSE）
+*   **🔌 无缝兼容**：完美模拟 OpenAI 的 `chat/completions` 接口，**同时支持流式（SSE）与非流式（JSON）响应**
+*   **🌍 全语言互转**：显式 `source_lang` / `target_lang` 支持 100+ 语言任意方向互转，含智能自动检测
 *   **⚡ 一键部署**：通过 Docker Compose 快速部署，简单高效
-*   **🧠 智能语言识别**：自动检测输入语言并智能选择翻译方向（中英互译），也支持手动指定
+*   **🧠 智能语言识别**：自动检测输入语言并智能选择翻译方向（中/日/韩/阿/俄 ↔ 英，其他 → 中文），也支持手动指定
 *   **🏗️ 稳定架构**：基于 FastAPI 和 Nginx 构建，具备优秀的性能和并发处理能力
+*   **🛡️ 规范化错误处理**：统一状态码与错误响应格式，含健康检查端点
 *   **🔓 完全开源**：代码透明，易于理解和扩展
 
 ---
@@ -195,6 +197,74 @@ data: [DONE]
 }
 ```
 
+### 非流式响应
+
+设置 `"stream": false` 即可获取普通 JSON 响应（默认 `stream: true` 为 SSE 流）：
+
+```bash
+curl -X POST "http://localhost:8088/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_KEY" \
+  -d '{
+    "model": "google-translate",
+    "messages": [{"role": "user", "content": "good morning"}],
+    "target_lang": "ja",
+    "stream": false
+  }'
+```
+
+返回 OpenAI `chat.completion` 格式：
+```json
+{
+  "id": "chatcmpl-xxx",
+  "object": "chat.completion",
+  "model": "google-translate",
+  "choices": [{"index": 0, "message": {"role": "assistant", "content": "おはよう"}, "finish_reason": "stop"}],
+  "usage": {"prompt_tokens": -1, "completion_tokens": -1, "total_tokens": -1}
+}
+```
+
+### 状态码与错误处理
+
+| 状态码 | 含义 |
+|--------|------|
+| `200` | 成功（流式 SSE 或非流式 JSON） |
+| `400` | 请求参数无效（缺 messages / 内容空 / 语言码不支持） |
+| `401` | 未携带认证 |
+| `403` | 认证失败 |
+| `422` | 请求体不符合 schema（Pydantic 校验失败） |
+| `500` | 服务器内部错误 |
+| `502` | 上游翻译服务错误（仅非流式） |
+
+统一错误响应格式：
+```json
+{"error": {"message": "具体描述", "type": "invalid_request_error"}}
+```
+
+完整对外 API 文档见 [`API_DOCS.md`](API_DOCS.md)，运行后也可访问 `http://localhost:8088/docs`（Swagger UI）。
+
+### 健康检查
+
+```bash
+curl http://localhost:8088/health
+# {"status":"ok","service":"googletranslate-2api","version":"1.0.0"}
+```
+
+### ⚠️ 安全须知
+
+- `API_MASTER_KEY=1` 或留空 = **关闭认证**，仅建议本地调试使用。生产环境**必须**设置为强随机密钥。
+- `.env` 文件已被 `.gitignore` 忽略，**切勿提交真实密钥**。`.env.example` 仅作模板，不含真实凭证。
+- 若曾误将真实 `GOOGLE_API_KEY` 提交到仓库，请**立即在谷歌侧轮换该密钥**。
+
+### 测试
+
+```bash
+pip install -r requirements-dev.txt
+pytest                    # 单元 + 集成 (mock 上游, 离线可跑)
+# 真实上游集成 (需有效 GOOGLE_API_KEY):
+GOOGLE_API_KEY=你的key RUN_REAL_INTEGRATION=1 pytest tests/test_integration_real.py
+```
+
 ---
 
 ## 🏗️ 技术架构深度解析
@@ -296,47 +366,46 @@ googletranslate-2api/
 ├── 🎯 docker-compose.yml         # 服务编排
 ├── ⚡ main.py                    # FastAPI 应用入口
 ├── 🔧 nginx.conf                 # Nginx 配置
-├── 📋 requirements.txt           # Python 依赖
+├── 📋 requirements.txt           # 运行依赖
+├── 📋 requirements-dev.txt       # 开发/测试依赖
+├── 🧪 pytest.ini                 # 测试配置
+├── 📖 API_DOCS.md                # 对外 API 文档
+├── 📁 tests/                     # 测试套件 (单元 + 集成 + mock + 真实)
 └── 📁 app/                       # 应用代码
-    ├── 🎪 __init__.py
     ├── 🔧 core/
-    │   └── config.py             # 配置管理
+    │   ├── config.py             # 配置管理
+    │   └── languages.py          # 语言码表与自动路由
     ├── 🤖 providers/
     │   ├── base_provider.py      # 提供者抽象基类
     │   └── googletranslate_provider.py  # 谷歌翻译实现
     └── 🛠️ utils/
-        └── sse_utils.py          # SSE 格式工具
+        └── sse_utils.py          # SSE / 响应格式工具
 ```
 
 ### 关键技术实现
 
 1. **请求转换机制**
    ```python
-   # 将 OpenAI 格式转换为谷歌翻译格式
-   def _prepare_payload(self, text: str, source_lang: str, target_lang: str) -> Dict:
-       return {
-           "q": text,
-           "source": source_lang,
-           "target": target_lang,
-           "format": "html"
-       }
+   # 将文本与语言方向转换为谷歌 translateHtml 的 protobuf-json 格式
+   def _prepare_payload(self, text: str, source_lang: str, target_lang: str) -> list:
+       return [[[text], source_lang, target_lang], "te_lib"]
    ```
 
 2. **响应解析处理**
    ```python
-   # 解析谷歌翻译的嵌套响应
-   translation_html = response.json()[0][0][0][5][0][0]
-   # 使用 BeautifulSoup 清理 HTML
-   soup = BeautifulSoup(translation_html, 'html.parser')
+   # 上游返回 [[translated_html]], 提取并清理
+   translated_html = response.json()[0][0]
+   soup = BeautifulSoup(translated_html, "html.parser")
+   clean_text = soup.get_text()  # 再转 Markdown
    ```
 
-3. **流式响应生成**
+3. **流式 / 非流式响应**
+   - `stream=true`：生成 OpenAI `chat.completion.chunk` SSE 流, 以 `data: [DONE]` 结束
+   - `stream=false`：返回 `chat.completion` JSON, 含 `message.content`
+
    ```python
-   # 生成 OpenAI 兼容的 SSE 格式
-   async def generate_stream_response(self, text: str):
-       yield self.create_sse_data(
-           self.create_chat_completion_chunk(text)
-       )
+   # 非流式响应构造
+   create_chat_completion(request_id, model, markdown_text)
    ```
 
 ---
@@ -375,17 +444,20 @@ googletranslate-2api/
 
 ### ✅ 已完成功能
 - [x] 核心翻译代理功能
-- [x] OpenAI API 格式兼容
-- [x] 流式响应支持
+- [x] OpenAI API 格式兼容（流式 SSE + 非流式 JSON）
+- [x] 全语言互转（显式 source_lang / target_lang，100+ 语言）
+- [x] 智能语言自动检测（中/日/韩/阿/俄 ↔ 英，其他 → 中文）
+- [x] OpenAI 多段 content 数组兼容
+- [x] 健康检查端点 `/health`
+- [x] 规范化状态码与统一错误响应
 - [x] Docker 容器化部署
-- [x] 智能语言检测
+- [x] Pytest 测试套件（单元 + 集成 + mock）
 
 ### 🚀 近期规划 (v1.1)
-- [ ] 真正的实时流式翻译
-- [ ] 多翻译提供商支持
+- [ ] 真正的实时流式翻译（按句增量推送）
+- [ ] 多翻译提供商支持（DeepL、百度）
 - [ ] Redis 缓存集成
 - [ ] 请求频率限制
-- [ ] 健康检查端点
 
 ### 🎯 长期愿景
 - [ ] Web 管理界面

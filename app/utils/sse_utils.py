@@ -4,9 +4,11 @@ from typing import Dict, Any, Optional
 
 DONE_CHUNK = b"data: [DONE]\n\n"
 
+
 def create_sse_data(data: Dict[str, Any]) -> bytes:
     """将字典数据格式化为 SSE 事件字符串。"""
     return f"data: {json.dumps(data)}\n\n".encode('utf-8')
+
 
 def create_chat_completion_chunk(
     request_id: str,
@@ -29,4 +31,44 @@ def create_chat_completion_chunk(
                 "finish_reason": finish_reason
             }
         ]
+    }
+
+
+def estimate_tokens(text: str) -> int:
+    """粗估 token 数: 英文 ~4 字符/token, 兜底避免 0。"""
+    if not text:
+        return 0
+    return max(1, len(text) // 4)
+
+
+def create_chat_completion(
+    request_id: str,
+    model: str,
+    content: str,
+    prompt_text: str = "",
+) -> Dict[str, Any]:
+    """创建与 OpenAI 兼容的非流式聊天补全响应。
+
+    usage 为粗估值 (无分词器), 以 estimate 标记, 替代旧版写死的 -1。
+    """
+    prompt_tokens = estimate_tokens(prompt_text)
+    completion_tokens = estimate_tokens(content)
+    return {
+        "id": request_id,
+        "object": "chat.completion",
+        "created": int(time.time()),
+        "model": model,
+        "choices": [
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": content},
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": prompt_tokens + completion_tokens,
+            "estimate": True,
+        },
     }
