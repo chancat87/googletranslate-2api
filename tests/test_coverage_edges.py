@@ -232,7 +232,13 @@ class TestProviderEdgeCoverage:
         r.json.side_effect = RuntimeError("boom")
         buf = io.StringIO()
         hid = _lg.add(
-            buf, format="{message}", level="WARNING", enqueue=False, colorize=False, backtrace=False, diagnose=False
+            buf,
+            format="{message}",
+            level="WARNING",
+            enqueue=False,
+            colorize=False,
+            backtrace=False,
+            diagnose=False,
         )
         try:
             p._log_upstream_error(r, 500)
