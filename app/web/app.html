@@ -311,6 +311,15 @@
               <input id="newKey" class="input" style="flex:3;min-width:220px" placeholder="粘贴新的 GOOGLE API Key">
               <button class="btn btn-primary" data-action="addkey"><span data-icon="plus"></span>新增</button>
             </div>
+            <details style="margin-bottom:12px">
+              <summary class="btn">批量导入</summary>
+              <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">
+                <textarea id="bulkKeys" class="textarea" placeholder="每行一个 Key，也支持逗号/分号分隔"></textarea>
+                <div>
+                  <button class="btn btn-primary" data-action="bulkkeys">导入</button>
+                </div>
+              </div>
+            </details>
             <div id="keysBody" class="table-wrap"></div>
           </div>
         </div>
@@ -517,6 +526,20 @@
         loadKeys();
       } catch (e) { toast("新增失败: " + e.message, "err"); }
     }
+    async function bulkImportKeys() {
+      const raw = $("bulkKeys").value || "";
+      const keys = raw.split(/[\n,;]+/).map((s) => s.trim()).filter(Boolean);
+      if (!keys.length) return toast("请先粘贴至少一个 Key", "err");
+      try {
+        const r = await api("/v1/admin/keys/bulk", {
+          method: "POST",
+          body: JSON.stringify({ keys }),
+        });
+        toast("新增 " + r.added.length + " 个，跳过 " + r.skipped.length + " 个", r.added.length ? "ok" : "");
+        $("bulkKeys").value = "";
+        loadKeys();
+      } catch (e) { toast("批量导入失败: " + e.message, "err"); }
+    }
     async function removeKey(hash) {
       if (!confirm("确认移除 Key " + hash + "？")) return;
       try {
@@ -670,6 +693,7 @@
       if (act.dataset.action === "savetoken") saveToken();
       if (act.dataset.action === "theme") applyTheme(state.theme === "dark" ? "light" : "dark");
       if (act.dataset.action === "addkey") addKey();
+      if (act.dataset.action === "bulkkeys") bulkImportKeys();
       if (act.dataset.action === "removekey") removeKey(act.dataset.hash);
       if (act.dataset.action === "translate") doTranslate();
       if (act.dataset.action === "selfcheck") selfCheck();

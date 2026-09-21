@@ -21,7 +21,7 @@ def _fake_redis():
 async def test_redis_rate_limiter_allow_and_retry():
     rl = RateLimiter(
         capacity=2,
-        per_second=10.0,
+        per_second=1.0,
         backend="redis",
         redis_url="redis://unused",
         prefix="t:",

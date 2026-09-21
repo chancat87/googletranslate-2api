@@ -105,6 +105,16 @@ async function main() {
     const output = await page.textContent("#translateOutput");
     if (!output.includes("mock")) throw new Error(`unexpected output: ${output}`);
 
+    await page.click('.nav-item[data-view="keys"]');
+    await page.click('summary:has-text("批量导入")');
+    await page.fill("#bulkKeys", "k-bulk-1\nk-bulk-2");
+    await page.click('[data-action="bulkkeys"]');
+    await page.waitForFunction(
+      () => document.getElementById("toast").textContent.includes("新增 2 个"),
+      undefined,
+      { timeout: 10000 }
+    );
+
     await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForTimeout(400);
     const mobileNavVisible = await page.isVisible(".mobile-nav");

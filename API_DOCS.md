@@ -137,7 +137,7 @@ print(resp.choices[0].message.content)
 ### 3. 健康检查 — `GET /health` / `GET /ready`
 
 ```json
-{"status": "ok", "service": "googletranslate-2api", "version": "2.6.0"}
+{"status": "ok", "service": "googletranslate-2api", "version": "2.7.0"}
 ```
 
 `/ready` 为就绪探针（联动上游熔断状态），可用时返回 `{"status": "ready", "service": "googletranslate-2api"}`。
@@ -227,6 +227,7 @@ curl -X POST http://localhost:8088/v1/translate/detect \
 | `/v1/admin/usage` | GET | 按 Key 哈希统计成功/失败/上游错误码 |
 | `/v1/admin/keys` | GET | Key 池列表(只含哈希) |
 | `/v1/admin/keys` | POST | 运行时新增上游 Key `{"key":"..."}` |
+| `/v1/admin/keys/bulk` | POST | 批量新增上游 Key `{"keys":["...","..."]}`（只回传哈希） |
 | `/v1/admin/keys/{key_hash}` | DELETE | 移除上游 Key |
 | `/v1/admin/traces?limit=N` | GET | 最近链路摘要 |
 

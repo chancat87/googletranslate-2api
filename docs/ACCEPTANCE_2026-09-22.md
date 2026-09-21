@@ -188,3 +188,15 @@ Redis / Secret 示例 + Kustomize），并给 Dockerfile/compose 增加优雅停
 | SSE 不压缩 | ✅ `text/event-stream` 不在 gzip_types，`proxy_buffering off` 保留 |
 | nginx 静态验收 | ✅ 2/2 |
 | 全量回归 | ✅ 290 passed / 1 skipped，覆盖率 98.89% |
+
+## 十四、v2.7.0 批量 Key 导入 (2026-09-22)
+
+**交付**: 管理 API + Web UI 支持批量导入用户自持的真实 Key，N 条一次进池。
+
+| 项 | 结果 |
+|---|---|
+| `POST /v1/admin/keys/bulk` | ✅ 新增/跳过统计，只回传哈希 |
+| 批量导入去重/空值 | ✅ 自动 strip、去重、跳过空行 |
+| Web UI 批量导入 | ✅ Keys 页“批量导入”折叠面板 |
+| Playwright 浏览器 E2E | ✅ 含批量导入步骤，PASS |
+| 全量回归 | ✅ 293 passed / 1 skipped，覆盖率 98.90% |

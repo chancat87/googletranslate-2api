@@ -2,6 +2,21 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [2.7.0] - 2026-09-22
+
+### 新增 (批量 Key 导入)
+
+- `POST /v1/admin/keys/bulk`：一次导入多条真实 Key，只回传哈希，不回传明文
+- Web UI Keys 页新增“批量导入”：每行一个 Key，支持逗号/分号分隔，自动去重/跳过空值
+- 复用现有 `KeyPool.add_key`，N 条 Key 进池后轮询/冷却/失败切换逻辑不变
+
+### 验证
+
+- 新增 API 2 项：批量导入新增/跳过、Key 池未初始化返回 400
+- Playwright 浏览器 E2E 增加批量导入步骤并通过
+- 全量回归 **293 passed / 1 skipped，覆盖率 98.90%**；ruff / format / mypy / docs links 全过
+- Redis 限流测试时间粒度加固：`per_second=10` 改为 `1`，避免慢环境令牌提前回填造成偶发 `wait=0`
+
 ## [2.6.0] - 2026-09-22
 
 ### 新增 (响应压缩)

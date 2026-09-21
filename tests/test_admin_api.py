@@ -125,6 +125,37 @@ async def test_admin_keys_guards(monkeypatch):
         assert r.status_code == 400  # 已存在
 
 
+@pytest.mark.asyncio
+async def test_admin_keys_bulk_import(monkeypatch):
+    _setup(monkeypatch)
+    h = {"Authorization": f"Bearer {MASTER}"}
+    async with AsyncClient(transport=ASGITransport(app=main_mod.app), base_url="http://test") as c:
+        r = await c.post(
+            "/v1/admin/keys/bulk",
+            headers=h,
+            json={"keys": ["k-b", "k-c", "k-b", ""]},
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["added"] == [key_hash("k-b"), key_hash("k-c")]
+        assert body["skipped"] == [key_hash("k-b")]
+        assert body["count"] == 3
+
+
+@pytest.mark.asyncio
+async def test_admin_keys_bulk_requires_pool(monkeypatch):
+    _setup(monkeypatch)
+    monkeypatch.setattr(main_mod.provider, "key_pool", None)
+    h = {"Authorization": f"Bearer {MASTER}"}
+    async with AsyncClient(transport=ASGITransport(app=main_mod.app), base_url="http://test") as c:
+        r = await c.post(
+            "/v1/admin/keys/bulk",
+            headers=h,
+            json={"keys": ["k-x"]},
+        )
+        assert r.status_code == 400
+
+
 def test_metric_samples_parse_and_disabled(monkeypatch):
     class _R:
         enabled = True

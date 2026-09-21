@@ -254,6 +254,18 @@ class AdminKeyOut(BaseModel):
     count: int = Field(..., description="当前 Key 池数量")
 
 
+class AdminKeysBulkIn(BaseModel):
+    keys: list[str] = Field(
+        ..., min_length=1, max_length=200, description="批量新增的上游 Key 列表"
+    )
+
+
+class AdminKeysBulkOut(BaseModel):
+    added: list[str] = Field(..., description="成功新增的 Key 哈希列表")
+    skipped: list[str] = Field(..., description="跳过(空/重复/非法)的 Key 哈希列表")
+    count: int = Field(..., description="当前 Key 池数量")
+
+
 # --- 安全依赖 (支持逗号分隔多 key + 常量时间比较) ---
 def _extract_bearer_token(authorization: str | None) -> str | None:
     if not authorization:
@@ -425,6 +437,30 @@ async def admin_keys_add(payload: AdminKeyIn):
     if not provider.key_pool.add_key(payload.key):
         raise HTTPException(status_code=400, detail="Key 为空或已存在")
     return AdminKeyOut(key_hash=key_hash(payload.key), count=len(provider.key_pool))
+
+
+@app.post(
+    "/v1/admin/keys/bulk",
+    dependencies=[Depends(verify_api_key)],
+    response_model=AdminKeysBulkOut,
+    tags=["管理"],
+    summary="批量新增上游 Key",
+)
+async def admin_keys_add_bulk(payload: AdminKeysBulkIn):
+    """v2.7.0: 一次导入多条 Key(只回传哈希, 不回传明文)。"""
+    if provider.key_pool is None:
+        raise HTTPException(status_code=400, detail="Key 池未初始化")
+    added: list[str] = []
+    skipped: list[str] = []
+    for raw in payload.keys:
+        key = raw.strip()
+        if not key:
+            continue
+        if provider.key_pool.add_key(key):
+            added.append(key_hash(key))
+        else:
+            skipped.append(key_hash(key))
+    return AdminKeysBulkOut(added=added, skipped=skipped, count=len(provider.key_pool))
 
 
 @app.delete(

@@ -57,3 +57,9 @@ def test_package_json_defines_web_ui_script():
 def test_ui_nav_delegation_does_not_shadow_action_buttons():
     html = (ROOT / "app" / "web" / "app.html").read_text(encoding="utf-8")
     assert 'closest(".nav-item, .nav-mobile-item")' in html
+
+
+def test_ui_has_bulk_key_import():
+    html = (ROOT / "app" / "web" / "app.html").read_text(encoding="utf-8")
+    assert "批量导入" in html
+    assert 'data-action="bulkkeys"' in html
