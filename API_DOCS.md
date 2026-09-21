@@ -254,6 +254,8 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 | `GOOGLE_API_KEYS` | 否 | — | 多上游 Key 池（逗号分隔），403/429/网络自动切换；缺省回退 `GOOGLE_API_KEY` |
 | `KEY_FAILOVER_COOLDOWN_SECONDS` | 否 | 60 | Key 失败冷却秒数 |
 | `TRACE_STORE_MAXLEN` | 否 | 512 | 链路摘要环形缓冲上限 |
+| `HTTPX_MAX_CONNECTIONS` | 否 | 0(自动) | HTTPX 上游连接池上限 (0=max(10, BATCH_MAX_CONCURRENCY+5))，高并发可调大 |
+| `HTTPX_MAX_KEEPALIVE_CONNECTIONS` | 否 | 0(自动) | HTTPX 连接池 keepalive 上限 (0=max(5, BATCH_MAX_CONCURRENCY)) |
 | `API_MASTER_KEY` | 否 | — | 主密钥; `1` 或空表示关闭认证 |
 | `NGINX_PORT` | 否 | `8088` | 对外暴露端口 |
 | `API_REQUEST_TIMEOUT` | 否 | `60` | 上游请求超时 (秒) |

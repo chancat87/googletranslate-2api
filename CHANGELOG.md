@@ -2,6 +2,17 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [1.5.1] - 2026-09-22
+
+### 新增 (真实并发压测 + 连接池可配)
+
+- **HTTPX 连接池参数可配**：`HTTPX_MAX_CONNECTIONS` / `HTTPX_MAX_KEEPALIVE_CONNECTIONS`（0=自动=max(10, BATCH+5) / max(5, BATCH)），替代写死值
+- **真实并发压测基线**：`scripts/loadtest.py`（cache/upstream 两模式）+ `docs/loadtest-2026-09-22.md` + 原始 JSON 证据入 `docs/loadtest/`
+- 实测结论：并发 1→40 全 200、0 错误、0 429；默认池真实上游 ~5.5-6 QPS，调参池(40) conc20+ ~10.3 QPS
+
+### 验证
+- 新增连接池显式覆盖测试；全量回归 **206 passed / 1 skipped，覆盖率 100%**（996 stmts）；ruff / mypy / format 0
+
 ## [1.5.0] - 2026-09-21
 
 ### 新增 (阶段 1.1/1.2/2.1 — 参考库对标落地)
