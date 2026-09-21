@@ -194,6 +194,26 @@ def _resp_json(translated: str):
     return r
 
 
+@pytest.mark.asyncio
+async def test_metrics_translate_duration_histogram(client):
+    """3.G.1: 翻译请求后 translate_duration_seconds 有样本。"""
+    with patch.object(
+        app_main.provider.client, "post", new=AsyncMock(return_value=_resp_json("你好"))
+    ):
+        r = await client.post(
+            "/v1/chat/completions",
+            json={
+                "messages": [{"role": "user", "content": "duration-test"}],
+                "stream": False,
+            },
+        )
+        assert r.status_code == 200
+    m = await client.get("/metrics")
+    assert m.status_code == 200
+    assert "translate_duration_seconds_count" in m.text
+    assert "translate_duration_seconds_sum" in m.text
+
+
 # ---------- metrics 禁用路径 ----------
 
 

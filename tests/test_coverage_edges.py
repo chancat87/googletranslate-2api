@@ -221,6 +221,26 @@ class TestProviderEdgeCoverage:
             {"code": 3, "msg": "x"}
         )
 
+    def test_log_upstream_error_parse_exception(self):
+        """P3-3: 上游错误体解析抛非 ValueError 异常 -> 摘要为空, 仍记录状态码。"""
+        import io
+
+        from loguru import logger as _lg
+
+        p = _mk_provider()
+        r = MagicMock()
+        r.json.side_effect = RuntimeError("boom")
+        buf = io.StringIO()
+        hid = _lg.add(
+            buf, format="{message}", level="WARNING", enqueue=False, colorize=False, backtrace=False, diagnose=False
+        )
+        try:
+            p._log_upstream_error(r, 500)
+        finally:
+            _lg.remove(hid)
+        assert "上游返回 500" in buf.getvalue()
+        assert "boom" not in buf.getvalue()
+
 
 # ---------- main 缺口 ----------
 

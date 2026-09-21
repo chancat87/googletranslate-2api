@@ -2,6 +2,17 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [1.4.4] - 2026-09-21
+
+### 增强 (3.G 可观测性 + 3.I 清洁化)
+- **translate_duration_seconds histogram 接线**：翻译路径（/v1/chat/completions、/v1/translate/batch）请求耗时正式上报 `/metrics`
+- **探针失败原因日志 (3.G.3)**：`/ready` 失败（熔断打开 / 上游 403/429/网络）输出原因到日志，便于排障
+- **P3-3 死代码接线**：`_parse_upstream_error` 正式接入 `_translate` 非 200 分支，上游错误摘要（截断 120）入日志
+- **3.I.4 清洁化核查**：源码零 TODO/FIXME、零宽空格回归检查通过
+
+### 验证
+- 新增测试：histogram 样本、探针失败日志、上游错误摘要/解析异常分支
+- 全量回归 **173 passed / 1 skipped，覆盖率 100%**（783 stmts）；ruff / mypy / format 0
 ## [1.4.3] - 2026-09-21
 
 ### 文档与验收 (3.F)

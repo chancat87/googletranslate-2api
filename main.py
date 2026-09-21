@@ -1,6 +1,7 @@
 import hmac
 import math
 import sys
+import time
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any
@@ -120,14 +121,20 @@ app = FastAPI(
 )
 
 
+_TRANSLATE_PATHS = {"/v1/chat/completions", "/v1/translate/batch"}
+
+
 @app.middleware("http")
 async def request_id_middleware(request: Request, call_next):
-    """P2.4: 为每个请求注入 trace id, 贯穿日志与响应头。"""
+    """P2.4: 为每个请求注入 trace id, 贯穿日志与响应头; 3.G.1: 翻译路径计时。"""
     request_id = request.headers.get("X-Request-Id") or f"req-{uuid.uuid4().hex[:16]}"
+    started = time.perf_counter()
     with logger.contextualize(request_id=request_id):
         logger.info(f"{request.method} {request.url.path}")
         response = await call_next(request)
         response.headers["X-Request-Id"] = request_id
+        if request.url.path in _TRANSLATE_PATHS:
+            metrics.translate_duration.observe(time.perf_counter() - started)
         return response
 
 

@@ -308,6 +308,7 @@ class GoogleTranslateProvider(BaseProvider):
         if response.status_code != 200:
             if record_health:
                 self._record_upstream_failure(str(response.status_code))
+            self._log_upstream_error(response, response.status_code)
             raise httpx.HTTPStatusError(
                 f"上游状态码 {response.status_code}", request=response.request, response=response
             )
@@ -543,6 +544,17 @@ class GoogleTranslateProvider(BaseProvider):
         clean_text = soup.get_text().replace("\u200b", "")
         return md(clean_text)
 
+    def _log_upstream_error(self, response: httpx.Response, status_code: int) -> None:
+        """P3-3: 接线 _parse_upstream_error, 把上游错误摘要写入日志 (截断 120, 不刷堆栈)。"""
+        try:
+            summary = self._parse_upstream_error(response, status_code)[:120]
+        except Exception:
+            summary = ""
+        if summary:
+            logger.warning(f"上游返回 {status_code}: {summary}")
+        else:
+            logger.warning(f"上游返回 {status_code}")
+
     def _parse_upstream_error(self, response: httpx.Response, status_code: int) -> str:
         """把上游错误响应转为可读字符串 (仅用于日志, 不回客户端)。"""
         try:
@@ -568,9 +580,12 @@ class GoogleTranslateProvider(BaseProvider):
     # --- 就绪探针 (P1.5 + M4): 熔断打开即不健康; 探测不污染熔断计数 ---
     async def probe_ready(self) -> bool:
         if self.circuit_breaker and not self.circuit_breaker.allow():
+            logger.warning("就绪探测失败: 熔断器打开")
             return False
         try:
             await self._translate(settings.READY_PROBE_TEXT, "auto", "zh-CN", record_health=False)
             return True  # 上游可达即就绪
-        except Exception:
+        except Exception as exc:
+            # 3.G.3: 失败原因写入日志/指标, 便于排障
+            logger.warning(f"就绪探测失败: {type(exc).__name__}: {str(exc)[:120]}")
             return False

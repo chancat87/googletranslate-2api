@@ -114,6 +114,42 @@ class TestRetry:
         assert p.client.post.call_count == 2
 
 
+# ---------- P3-3: 上游错误摘要日志 (接线 _parse_upstream_error) ----------
+
+
+class TestUpstreamErrorLogging:
+    @pytest.mark.asyncio
+    async def test_upstream_error_summary_logged(self, monkeypatch):
+        """上游非 200 且错误体可解析 -> 日志含上游 message 摘要 (不再死代码)。"""
+        monkeypatch.setattr(cfg.settings, "UPSTREAM_RETRY_ATTEMPTS", 1)
+        p = _provider_with_mock_client()
+        resp = _resp("x", 429)
+        resp.json.return_value = [3, "Request contains an invalid argument"]
+        p.client.post.return_value = resp
+
+        import io
+
+        from loguru import logger as _lg
+
+        buf = io.StringIO()
+        hid = _lg.add(
+            buf,
+            format="{message}",
+            level="WARNING",
+            enqueue=False,
+            colorize=False,
+            backtrace=False,
+            diagnose=False,
+        )
+        try:
+            with pytest.raises(httpx.HTTPStatusError):
+                await p._translate("hello", "auto", "zh-CN")
+        finally:
+            _lg.remove(hid)
+        assert "invalid argument" in buf.getvalue()
+        assert "429" in buf.getvalue()
+
+
 # ---------- M4: 熔断器 ----------
 
 
@@ -165,6 +201,35 @@ class TestCircuitBreaker:
         with pytest.raises(HTTPException) as e:
             await p.chat_completion({"messages": [{"role": "user", "content": "hi"}]})
         assert e.value.status_code == 503
+
+    @pytest.mark.asyncio
+    async def test_probe_ready_logs_failure_reason(self):
+        """3.G.3: 探针失败原因写入日志。"""
+        import io
+
+        from loguru import logger as _lg
+
+        p = _provider_with_mock_client()
+        bad = _resp("x", 500)
+        p._translate = AsyncMock(
+            side_effect=httpx.HTTPStatusError("500", request=MagicMock(), response=bad)
+        )
+        buf = io.StringIO()
+        hid = _lg.add(
+            buf,
+            format="{message}",
+            level="WARNING",
+            enqueue=False,
+            colorize=False,
+            backtrace=False,
+            diagnose=False,
+        )
+        try:
+            ok = await p.probe_ready()
+        finally:
+            _lg.remove(hid)
+        assert ok is False
+        assert "就绪探测失败" in buf.getvalue()
 
     @pytest.mark.asyncio
     async def test_probe_ready_false_when_open(self):
