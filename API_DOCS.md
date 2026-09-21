@@ -219,6 +219,21 @@ curl -X POST http://localhost:8088/v1/translate/detect \
 - 失败 Key 进入冷却（`KEY_FAILOVER_COOLDOWN_SECONDS`，默认 60s），到期前不再优先选用
 - `/metrics` 新增 `translate_key_switches_total`、`translate_requests_by_key_hash_total{key,result}`、`translate_upstream_errors_by_key_hash_total{key,code}`、`translate_key_pool_status{key,state}`
 
+### 9. 管理 API (v2.0.0, 均需认证)
+
+| 端点 | 方法 | 说明 |
+|---|---|---|
+| `/v1/admin/overview` | GET | 总览: 版本/运行时长/缓存/Key 池/指标/链路数 |
+| `/v1/admin/usage` | GET | 按 Key 哈希统计成功/失败/上游错误码 |
+| `/v1/admin/keys` | GET | Key 池列表(只含哈希) |
+| `/v1/admin/keys` | POST | 运行时新增上游 Key `{"key":"..."}` |
+| `/v1/admin/keys/{key_hash}` | DELETE | 移除上游 Key |
+| `/v1/admin/traces?limit=N` | GET | 最近链路摘要 |
+
+### 10. 管理面板 — `GET /admin`(v2.0.0)
+
+打开 `http://<host>:8088/admin`，填入 `API_MASTER_KEY` 后使用。原生单文件 UI，无外部依赖。
+
 ---
 
 ## 支持的语言代码

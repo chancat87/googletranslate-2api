@@ -2,6 +2,22 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [2.0.0] - 2026-09-22
+
+### 新增 (管理 API + 管理面板 + 小白体验)
+
+- **管理 API**（受 `API_MASTER_KEY` 保护）：`/v1/admin/overview`、`/v1/admin/usage`、`/v1/admin/keys`（GET/POST/DELETE，只存哈希）、`/v1/admin/traces`
+- **Key 池运行时运维**：`KeyPool.add_key / remove_key_by_hash`，热增/热删上游 Key 无需重启
+- **管理面板** `GET /admin`：原生单文件 Web UI（总览/Keys/用量/最近请求/一键自检，加载态与错误反馈齐全）
+- **启动脚本体验**：`start.ps1` / `start-dev.bat` 启动后打印 API 文档与管理面板地址
+- **中文教程** `docs/TUTORIAL.md` + **文档死链检查** `scripts/check_docs_links.py`（已入 CI 与测试）
+
+### 验证
+
+- 全量回归 **244 passed / 1 skipped**；ruff / mypy / format 0
+- 管理 API 单测覆盖：认证 401/403、总览/用量、Key 增删查、最近请求、UI HTML
+- 真实 Key E2E 见 `docs/ACCEPTANCE_2026-09-22.md`（本轮追加 v2.0.0 管理矩阵）
+
 ## [1.7.0] - 2026-09-22
 
 ### 新增 (可观测与运维基础)

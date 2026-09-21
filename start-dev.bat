@@ -55,4 +55,6 @@ exit /b 1
 :launch
 echo [start] 启动: python -m uvicorn main:app --reload --port 8088
 echo [start] 访问: http://127.0.0.1:8088   (Ctrl+C 停止)
+echo [start] API 文档: http://127.0.0.1:8088/docs
+echo [start] 管理面板: http://127.0.0.1:8088/admin   (需 API_MASTER_KEY)
 "%VENV_PY%" -m uvicorn main:app --reload --port 8088

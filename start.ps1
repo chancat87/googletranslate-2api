@@ -53,4 +53,6 @@ if ($envContent -match "在这里填入") {
 # 5) 启动
 Write-Host "[start] 启动: python -m uvicorn main:app --reload --port 8088" -ForegroundColor Green
 Write-Host "[start] 访问: http://127.0.0.1:8088  (Ctrl+C 停止)" -ForegroundColor Green
+Write-Host "[start] API 文档: http://127.0.0.1:8088/docs" -ForegroundColor Cyan
+Write-Host "[start] 管理面板: http://127.0.0.1:8088/admin  (需 API_MASTER_KEY)" -ForegroundColor Cyan
 & $VenvPython -m uvicorn main:app --reload --port 8088

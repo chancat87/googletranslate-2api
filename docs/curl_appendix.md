@@ -1,13 +1,13 @@
 # 真实调用输出附录（curl 实跑，非编造）
 
-> 生成: 2026-09-22 03:31:35 | 命令: scripts/refresh_curl_appendix.ps1 | 基址: http://127.0.0.1:8094
+> 生成: 2026-09-22 03:58:57 | 命令: scripts/refresh_curl_appendix.ps1 | 基址: http://127.0.0.1:8094
 
 ## 非流式翻译
 ```bash
 curl -s -X POST http://127.0.0.1:8094/v1/chat/completions -H 'Content-Type: application/json' -d '{"messages":[{"role":"user","content":"Hello world"}],"target_lang":"zh-CN","stream":false}'
 ```
 ```
-{"id":"chatcmpl-f8312a4d-f3ce-4f01-acca-d1d71f019dc9","object":"chat.completion","created":1790019097,"model":"google-translate","choices":[{"index":0,"message":{"role":"assistant","content":"你好世界"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3,"estimate":true}}
+{"id":"chatcmpl-b6e69cf6-f20f-4c2e-b82d-7dc5d96485a0","object":"chat.completion","created":1790020738,"model":"google-translate","choices":[{"index":0,"message":{"role":"assistant","content":"你好世界"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3,"estimate":true}}
 ```
 
 ## 流式翻译
@@ -15,7 +15,7 @@ curl -s -X POST http://127.0.0.1:8094/v1/chat/completions -H 'Content-Type: appl
 curl -s -N -X POST http://127.0.0.1:8094/v1/chat/completions -H 'Content-Type: application/json' -d '{"messages":[{"role":"user","content":"Good morning"}],"target_lang":"zh-CN","stream":true}'
 ```
 ```
-data: {"id": "chatcmpl-bb69738c-edaa-4c39-abab-9ade8d4bff1f", "object": "chat.completion.chunk", "created": 1790019097, "model": "google-translate", "choices": [{"index": 0, "delta": {"content": "\u65e9\u4e0a\u597d"}, "finish_reason": null}]}  data: {"id": "chatcmpl-bb69738c-edaa-4c39-abab-9ade8d4bff1f", "object": "chat.completion.chunk", "created": 1790019097, "model": "google-translate", "choices": [{"index": 0, "delta": {"content": ""}, "finish_reason": "stop"}]}  data: [DONE] 
+data: {"id": "chatcmpl-43dee7fc-6bd3-4c34-945d-b8a11d0ec54a", "object": "chat.completion.chunk", "created": 1790020739, "model": "google-translate", "choices": [{"index": 0, "delta": {"content": "\u65e9\u4e0a\u597d"}, "finish_reason": null}]}  data: {"id": "chatcmpl-43dee7fc-6bd3-4c34-945d-b8a11d0ec54a", "object": "chat.completion.chunk", "created": 1790020739, "model": "google-translate", "choices": [{"index": 0, "delta": {"content": ""}, "finish_reason": "stop"}]}  data: [DONE] 
 ```
 
 ## 批量翻译
@@ -39,5 +39,5 @@ curl -s -X POST http://127.0.0.1:8094/v1/translate/detect -H 'Content-Type: appl
 curl -s http://127.0.0.1:8094/health
 ```
 ```
-{"status":"ok","service":"googletranslate-2api","version":"1.7.0"}
+{"status":"ok","service":"googletranslate-2api","version":"2.0.0"}
 ```

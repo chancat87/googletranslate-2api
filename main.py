@@ -1,19 +1,22 @@
 import hmac
 import math
+import re
 import sys
 import time
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 from app.core.config import settings
+from app.core.key_pool import key_hash
 from app.core.languages import is_supported
 from app.core.metrics import metrics
 from app.core.rate_limit import RateLimiter
 from app.providers.googletranslate_provider import GoogleTranslateProvider
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -124,6 +127,8 @@ app = FastAPI(
     description=settings.DESCRIPTION,
     lifespan=lifespan,
 )
+
+_APP_START = time.time()
 
 
 _TRANSLATE_PATHS = {"/v1/chat/completions", "/v1/translate/batch"}
@@ -240,6 +245,15 @@ class ErrorResponse(BaseModel):
     error: dict = Field(..., description="错误信息, 含 message 与 type")
 
 
+class AdminKeyIn(BaseModel):
+    key: str = Field(..., min_length=1, description="新增的上游 Google API Key")
+
+
+class AdminKeyOut(BaseModel):
+    key_hash: str = Field(..., description="Key 的 sha256 短摘要")
+    count: int = Field(..., description="当前 Key 池数量")
+
+
 # --- 安全依赖 (支持逗号分隔多 key + 常量时间比较) ---
 def _extract_bearer_token(authorization: str | None) -> str | None:
     if not authorization:
@@ -296,6 +310,151 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
         status_code=500,
         content={"error": {"message": "内部服务器错误", "type": "internal_error"}},
     )
+
+
+# --- 管理 API (v2.0.0) ---
+
+
+def _metric_samples(name: str) -> list[tuple[dict[str, str], float]]:
+    """从进程内 registry 文本解析指定指标样本 (名称{标签} 值)。"""
+    out: list[tuple[dict[str, str], float]] = []
+    if not metrics.enabled:
+        return out
+    for line in metrics.render().decode("utf-8", "replace").splitlines():
+        if line.startswith(name + "{"):
+            head, _, rest = line.partition(" ")
+            labels = dict(re.findall(r'(\w+)="([^"]*)"', head))
+            try:
+                out.append((labels, float(rest.strip())))
+            except ValueError:
+                continue
+    return out
+
+
+def _metric_total(name: str) -> float:
+    return sum(v for _, v in _metric_samples(name))
+
+
+@app.get(
+    "/v1/admin/overview",
+    dependencies=[Depends(verify_api_key)],
+    tags=["管理"],
+    summary="管理总览 (v2.0.0)",
+)
+async def admin_overview():
+    cache_backend = "redis" if provider.redis_cache is not None else "memory"
+    cache_size = None
+    if cache_backend == "memory":
+        cache_size = len(provider.cache) if provider.cache is not None else 0
+    pool = provider.key_pool
+    return {
+        "version": settings.APP_VERSION,
+        "uptime_seconds": int(time.time() - _APP_START),
+        "cache": {
+            "configured": settings.CACHE_BACKEND,
+            "active": cache_backend,
+            "size": cache_size,
+        },
+        "key_pool": {
+            "count": len(pool) if pool else 0,
+            "available": pool.available_count() if pool else 0,
+            "keys": pool.status() if pool else [],
+        },
+        "metrics": {
+            "requests_total": _metric_total("translate_requests_total"),
+            "cache_hit_total": _metric_total("cache_hit_total"),
+            "cache_miss_total": _metric_total("cache_miss_total"),
+            "rate_limited_total": _metric_total("rate_limited_total"),
+            "upstream_errors_total": _metric_total("translate_upstream_errors_total"),
+        },
+        "traces_size": await provider.trace_store.size(),
+    }
+
+
+@app.get(
+    "/v1/admin/usage",
+    dependencies=[Depends(verify_api_key)],
+    tags=["管理"],
+    summary="按 Key 用量 (v2.0.0)",
+)
+async def admin_usage():
+    per_key: dict[str, dict[str, float]] = {}
+    for labels, value in _metric_samples("translate_requests_by_key_hash_total"):
+        key = labels.get("key", "?")
+        result = labels.get("result", "ok")
+        per_key.setdefault(key, {"ok": 0.0, "error": 0.0})
+        per_key[key][result] = per_key[key].get(result, 0.0) + value
+    errors: dict[str, dict[str, float]] = {}
+    for labels, value in _metric_samples("translate_upstream_errors_by_key_hash_total"):
+        key = labels.get("key", "?")
+        errors.setdefault(key, {})[str(labels.get("code", "?"))] = value
+    return {
+        "per_key": [
+            {"key_hash": k, "requests": d, "errors": errors.get(k, {})} for k, d in per_key.items()
+        ],
+        "switches_total": _metric_total("translate_key_switches_total"),
+    }
+
+
+@app.get(
+    "/v1/admin/keys", dependencies=[Depends(verify_api_key)], tags=["管理"], summary="Key 池列表"
+)
+async def admin_keys():
+    pool = provider.key_pool
+    return {
+        "count": len(pool) if pool else 0,
+        "available": pool.available_count() if pool else 0,
+        "keys": pool.status() if pool else [],
+    }
+
+
+@app.post(
+    "/v1/admin/keys",
+    dependencies=[Depends(verify_api_key)],
+    response_model=AdminKeyOut,
+    tags=["管理"],
+    summary="运行时新增上游 Key",
+)
+async def admin_keys_add(payload: AdminKeyIn):
+    if provider.key_pool is None:
+        raise HTTPException(status_code=400, detail="Key 池未初始化")
+    if not provider.key_pool.add_key(payload.key):
+        raise HTTPException(status_code=400, detail="Key 为空或已存在")
+    return AdminKeyOut(key_hash=key_hash(payload.key), count=len(provider.key_pool))
+
+
+@app.delete(
+    "/v1/admin/keys/{key_hash_value}",
+    dependencies=[Depends(verify_api_key)],
+    tags=["管理"],
+    summary="移除上游 Key",
+)
+async def admin_keys_delete(key_hash_value: str):
+    if provider.key_pool is None:
+        raise HTTPException(status_code=400, detail="Key 池未初始化")
+    if not provider.key_pool.remove_key_by_hash(key_hash_value):
+        raise HTTPException(status_code=404, detail="未找到该 Key")
+    return {"ok": True, "count": len(provider.key_pool)}
+
+
+@app.get(
+    "/v1/admin/traces",
+    dependencies=[Depends(verify_api_key)],
+    tags=["管理"],
+    summary="最近链路摘要",
+)
+async def admin_traces(limit: int = 50):
+    return {
+        "count": await provider.trace_store.size(),
+        "traces": await provider.trace_store.recent(limit),
+    }
+
+
+@app.get("/admin", include_in_schema=False)
+async def admin_ui():
+    """v2.0.0 管理面板 (原生单文件 UI, 无外部依赖)。"""
+    path = Path(__file__).resolve().parent / "app" / "web" / "admin.html"
+    return HTMLResponse(path.read_text(encoding="utf-8"))
 
 
 # --- API 路由 ---

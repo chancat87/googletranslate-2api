@@ -66,6 +66,40 @@ class KeyPool:
         with self._lock:
             self._cooldowns.pop(key, None)
 
+    def add_key(self, key: str) -> bool:
+        """运行时新增 Key (v2.0.0 管理 API); 已在池中或非法输入返回 False。"""
+        key = (key or "").strip()
+        if not key:
+            return False
+        with self._lock:
+            if key in self._keys:
+                return False
+            self._keys.append(key)
+            return True
+
+    def remove_key(self, key: str) -> bool:
+        """按明文 Key 移除 (v2.0.0 管理 API); 不存在返回 False。"""
+        with self._lock:
+            if key not in self._keys:
+                return False
+            self._keys.remove(key)
+            self._cooldowns.pop(key, None)
+            if self._cursor >= len(self._keys):
+                self._cursor = 0
+            return True
+
+    def remove_key_by_hash(self, key_hash_to_remove: str) -> bool:
+        """按 Key 哈希摘要移除 (只存哈希即能定位, 不回传明文)。"""
+        with self._lock:
+            for i, k in enumerate(self._keys):
+                if key_hash(k) == key_hash_to_remove:
+                    self._keys.pop(i)
+                    self._cooldowns.pop(k, None)
+                    if self._cursor >= len(self._keys):
+                        self._cursor = 0
+                    return True
+            return False
+
     def available_count(self) -> int:
         now = self._now()
         return sum(1 for k in self._keys if self._cooldowns.get(k, 0.0) <= now)

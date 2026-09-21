@@ -25,6 +25,9 @@ jobs:
       - name: Mypy type check
         run: python -m mypy app main.py
 
+      - name: Docs links check
+        run: python scripts/check_docs_links.py
+
       - name: Test with coverage
         run: python -m pytest --cov=app --cov=main --cov-report=term-missing
 
