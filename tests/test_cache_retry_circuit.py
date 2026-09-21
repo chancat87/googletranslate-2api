@@ -60,9 +60,28 @@ class TestRetry:
         monkeypatch.setattr(cfg.settings, "UPSTREAM_RETRY_JITTER", 0.0)
         p = _provider_with_mock_client()
         p.client.post.side_effect = [_resp("x", 503), _resp("x", 503), _resp("你好")]
-        out = await p._translate("hello", "auto", "zh-CN")
+        # 3.D 验收: 日志含重试计数 (注入探针 sink 捕获)
+        import io
+
+        from loguru import logger as _lg
+
+        buf = io.StringIO()
+        hid = _lg.add(
+            buf,
+            format="{message}",
+            level="WARNING",
+            enqueue=False,
+            colorize=False,
+            backtrace=False,
+            diagnose=False,
+        )
+        try:
+            out = await p._translate("hello", "auto", "zh-CN")
+        finally:
+            _lg.remove(hid)
         assert "你好" in out
         assert p.client.post.call_count == 3
+        assert "重试" in buf.getvalue()
 
     @pytest.mark.asyncio
     async def test_no_retry_on_400(self, monkeypatch):
@@ -155,6 +174,23 @@ class TestCircuitBreaker:
         assert await p.probe_ready() is False
 
 
+# ---------- 3.D.5: 连接池 limits ----------
+
+
+class TestConnectionPool:
+    @pytest.mark.asyncio
+    async def test_initialize_sets_connection_pool_limits(self, monkeypatch):
+        monkeypatch.setattr(cfg.settings, "BATCH_MAX_CONCURRENCY", 7)
+        p = GoogleTranslateProvider()
+        await p.initialize()
+        try:
+            pool = p.client._transport._pool
+            assert pool._max_connections >= 10  # max(10, 7+5)
+            assert pool._max_keepalive_connections >= 7
+        finally:
+            await p.close()
+
+
 # ---------- M5: 批量整体 deadline ----------
 
 
@@ -175,7 +211,7 @@ class TestBatchDeadline:
         started = asyncio.get_event_loop().time()
         results = await p.translate_batch(["slow", "fast"], "auto", "zh-CN")
         elapsed = asyncio.get_event_loop().time() - started
-        assert elapsed < 3, f"整体耗时应受 budget 约束, 实际 {elapsed:.1f}s"
+        assert 0.5 <= elapsed < 4, f"整体耗时应接近 budget(1s), 实际 {elapsed:.1f}s"
         by_text = {r["text"]: r for r in results}
         assert by_text["slow"]["ok"] is False
         assert by_text["slow"]["error"] == "timeout"

@@ -74,7 +74,15 @@ class GoogleTranslateProvider(BaseProvider):
             raise ValueError("GOOGLE_API_KEY 未在 .env 文件中配置。")
         if "在这里填入" in settings.GOOGLE_API_KEY:
             raise ValueError("GOOGLE_API_KEY 仍是示例占位符, 请填入真实 Key 后启动。")
-        self.client = httpx.AsyncClient(timeout=settings.API_REQUEST_TIMEOUT)
+        # 3.D.5: 显式连接池限制, 与批量并发参数匹配, 避免默认池争抢
+        pool_conns = max(10, settings.BATCH_MAX_CONCURRENCY + 5)
+        self.client = httpx.AsyncClient(
+            timeout=settings.API_REQUEST_TIMEOUT,
+            limits=httpx.Limits(
+                max_connections=pool_conns,
+                max_keepalive_connections=max(5, settings.BATCH_MAX_CONCURRENCY),
+            ),
+        )
         # 每次初始化重建缓存, 避免跨测试/重启的脏数据
         self.cache = make_cache()
         self.reset_health()
@@ -343,6 +351,8 @@ class GoogleTranslateProvider(BaseProvider):
         for n in range(attempts):
             if n > 0:
                 backoff = min(base * (2 ** (n - 1)), max_backoff) + random.uniform(0, jitter)
+                # 3.D.1 验收: 重试计数入日志, 便于观测瞬时故障
+                logger.warning(f"上游重试第 {n + 1}/{attempts} 次, 退避 {backoff:.2f}s")
                 await asyncio.sleep(backoff)
             try:
                 resp = await self.client.post(self.BASE_URL, headers=headers, json=payload)

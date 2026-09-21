@@ -2,6 +2,16 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [1.4.1] - 2026-09-21
+
+### 增强 (3.D / 3.E 验收补齐)
+- **3.D.5 连接池显式限制**：`initialize()` 使用 `httpx.Limits`（max_connections = max(10, BATCH_MAX_CONCURRENCY+5)，max_keepalive = max(5, BATCH_MAX_CONCURRENCY)），与批量并发匹配
+- **3.D.1 重试日志**：`_post_with_retry` 重试时输出带次数的 WARNING（"上游重试第 n/attempts 次，退避 x s"），满足 3.D 验收"日志含重试计数"
+- 批量 deadline 耗时断言收紧（整体耗时受 budget 约束，实测 ~1s）
+
+### 验证
+- 新增连接池/重试日志测试；全量回归 **168 passed / 1 skipped，覆盖率 100%**（767 stmts）
+- ruff / mypy / format 0；真实上游翻译 E2E PASSED
 ## [1.4.0] - 2026-09-21
 
 ### 增强 (P3 项闭环)
