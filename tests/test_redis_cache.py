@@ -33,6 +33,18 @@ async def test_redis_backend_missing_key_returns_none():
 
 
 @pytest.mark.asyncio
+async def test_redis_backend_lock_acquire_release():
+    backend = RedisCacheBackend(_fake_redis(), "g2api:", 60)
+    assert await backend.acquire_lock("k") is True
+    assert await backend.acquire_lock("k") is False
+    await backend.release_lock("k")
+    assert await backend.acquire_lock("k") is True
+    await backend.release_lock("k")
+    await backend.release_lock("k")  # 无 token 时幂等
+    await backend.aclose()
+
+
+@pytest.mark.asyncio
 async def test_provider_cache_methods_redis_backend():
     provider = GoogleTranslateProvider()
     provider.redis_cache = RedisCacheBackend(_fake_redis(), "g2api:", 60)
@@ -88,3 +100,9 @@ async def test_make_redis_cache_fallback_when_unreachable(monkeypatch):
     monkeypatch.setattr(cache_mod.settings, "REDIS_URL", "redis://127.0.0.1:1/0")
     backend = await make_redis_cache()
     assert backend is None  # 连接失败 -> 优雅降级, 不抛异常
+
+
+@pytest.mark.asyncio
+async def test_make_redis_cache_disabled(monkeypatch):
+    monkeypatch.setattr(cache_mod.settings, "CACHE_ENABLED", False)
+    assert await make_redis_cache() is None

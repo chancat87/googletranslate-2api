@@ -81,3 +81,31 @@ python scripts/e2e_smoke.py --url http://<host>:8088 --expect-version 1.6.1
 | CI pytest | ✅ 259 passed / 1 skipped, 覆盖率 98.76% |
 | CI ruff / format / mypy / docs links / docker build smoke | ✅ 全过 |
 | 本地 Windows pytest | ✅ 259 passed / 1 skipped, 覆盖率 98.76% |
+
+## 八、v2.2.0 缓存 stampede 防护 (2026-09-22)
+
+**功能**: 进程内 per-key singleflight（有界 `asyncio.Lock`，上限 2048）+ Redis SETNX
+跨进程门闩（token 校验删除、异常/超时降级直接打上游），并发同文本只放行一次上游请求。
+
+**单测验收**: 新增 8 项
+
+| 用例 | 结果 |
+|---|---|
+| 同文 20 并发 | ✅ 仅 1 次上游，19 个等待者缓存命中 |
+| 不同 key 隔离 | ✅ 各自独立打上游 |
+| 跨进程共享 Redis 门闩 | ✅ 仅 1 次上游 |
+| Redis 门闩异常 / 超时 | ✅ 降级直接打上游不抛错 |
+| 门闩释放失败 | ✅ 抑制并告警，不影响结果 |
+| 有界锁 LRU 驱逐 | ✅ 超过 2048 后淘汰最旧 key |
+
+**进程级 E2E (mock 上游 + 认证开启, v2.2.0)**: **20/20 全过**，包含 stream/cache hit/batch/detect/
+错误矩阵/401/403。
+
+**确定性并发基准 (cache 模式, mock 上游)**: conc 1/5/10/20 全 200、0 错 0 429，
+QPS `26.8 / 23.8 / 22.8 / 21.7`，p95 `41.4 / 268.4 / 418.2 / 414.5ms`。
+
+**全量回归**: **269 passed / 1 skipped，覆盖率 98.88%**；ruff / format / mypy 全过。
+
+**真实 Google 上游复测 (2026-09-22)**: 使用历史 `.env` Key 启动后，上游返回 **400**，
+E2E 仅 14/20（非流式/批量/cache 断言受影响），判定为凭证失效而非代码缺陷；真实上游验收需新 Key，
+详见 `docs/AUDIT_2026-09-22.md`。

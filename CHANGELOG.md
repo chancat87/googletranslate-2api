@@ -2,6 +2,20 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [2.2.0] - 2026-09-22
+
+### 新增 (缓存 stampede 防护)
+
+- **进程内 singleflight**：`GoogleTranslateProvider` 按缓存 key 持有有界 `asyncio.Lock`（LRU 驱逐上限 2048），并发同文本只放行一个上游请求，其余等待缓存写回
+- **Redis 跨进程门闩**：`RedisCacheBackend.acquire_lock/release_lock` 用 SETNX + token 删除，多 worker/多副本下同一文本同样只打一次上游；Redis 异常或门闩超时自动降级直接打上游
+- 上游调用提取为 `_translate_uncached`，保持既有 Key 池 / 重试 / 熔断 / 配额逻辑不变
+
+### 验证
+
+- 新增 8 项 singleflight + Redis 门闩测试：同文 20 并发仅 1 次上游、不同 key 隔离、跨进程共享 Redis 仅 1 次上游、门闩异常/超时降级、释放失败不抛错、有界锁驱逐
+- 全量回归 **269 passed / 1 skipped，覆盖率 98.88%**；ruff / format / mypy 全过
+- 真实 E2E 与 mock 基准见验收文档
+
 ## [2.1.1] - 2026-09-22
 
 ### 修复

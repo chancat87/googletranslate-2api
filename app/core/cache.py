@@ -13,6 +13,7 @@ v1.6.0: `CACHE_BACKEND=redis` 时使用 Redis 共享缓存 (统一前缀 + TTL),
 
 import contextlib
 import hashlib
+import uuid
 
 try:
     from cachetools import TTLCache
@@ -33,6 +34,8 @@ class RedisCacheBackend:
         self._client = client
         self._prefix = prefix
         self._ttl = max(1, ttl)
+        self._lock_tokens: dict[str, str] = {}
+        self._lock_prefix = "stampede:"
 
     async def get(self, key: str) -> str | None:
         value = await self._client.get(self._prefix + key)
@@ -43,6 +46,26 @@ class RedisCacheBackend:
 
     async def aclose(self) -> None:
         await self._client.aclose()
+
+    async def acquire_lock(self, key: str, ttl: int = 30) -> bool:
+        """SETNX 门闩 (v2.2.0): 跨 worker/副本同一文本只放行一个上游请求。"""
+        token = uuid.uuid4().hex
+        lock_key = self._prefix + self._lock_prefix + key
+        acquired = await self._client.set(lock_key, token, nx=True, ex=ttl)
+        if acquired:
+            self._lock_tokens[key] = token
+        return bool(acquired)
+
+    async def release_lock(self, key: str) -> None:
+        """释放门闩: 仅删除自己持有的 token, 避免误删后续持有者。"""
+        token = self._lock_tokens.pop(key, None)
+        if token is None:
+            return
+        lock_key = self._prefix + self._lock_prefix + key
+        with contextlib.suppress(Exception):
+            current = await self._client.get(lock_key)
+            if current == token:
+                await self._client.delete(lock_key)
 
 
 def make_cache():

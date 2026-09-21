@@ -18,6 +18,7 @@ import random
 import re
 import time
 import uuid
+from collections import OrderedDict
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -68,6 +69,9 @@ _KEY_FAILOVER_STATUS = (400, 401, 403, 429)
 _SSE_SAFE_DETAILS = frozenset({"翻译服务暂时不可用"})
 _TRANSPORT_ERRORS = (httpx.TransportError, httpx.TimeoutException)
 
+# v2.2.0: 缓存 stampede 防护 — 进程内 per-key 单飞锁上限 + Redis 门闩 TTL
+_SINGLEFLIGHT_MAX_KEYS = 2048
+
 
 class GoogleTranslateProvider(BaseProvider):
     """将 Google Translate 翻译接口适配为 OpenAI Chat Completions 流式响应。"""
@@ -97,6 +101,8 @@ class GoogleTranslateProvider(BaseProvider):
                 window_seconds=settings.CIRCUIT_WINDOW_SECONDS,
                 open_seconds=settings.CIRCUIT_OPEN_SECONDS,
             )
+        # v2.2.0: per-key 单飞锁 (有界 LRU 语义, 旧 key 驱逐)
+        self._inflight_locks: OrderedDict[str, asyncio.Lock] = OrderedDict()
 
     async def initialize(self):
         keys = self._effective_keys()
@@ -157,6 +163,36 @@ class GoogleTranslateProvider(BaseProvider):
             await self.redis_cache.set(key, value)
             return
         cache_put(self.cache, key, value)
+
+    def _singleflight_lock(self, key: str) -> asyncio.Lock:
+        """取 per-key 进程内锁; 有界防止无限增长 (v2.2.0)。"""
+        lock = self._inflight_locks.get(key)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._inflight_locks[key] = lock
+            if len(self._inflight_locks) > _SINGLEFLIGHT_MAX_KEYS:
+                self._inflight_locks.popitem(last=False)
+        else:
+            self._inflight_locks.move_to_end(key)
+        return lock
+
+    async def _wait_for_redis_lock(self, key: str) -> bool:
+        """跨进程 SETNX 门闩: 抢到才打上游, 未抢到轮询等缓存写回 (v2.2.0)。"""
+        if self.redis_cache is None:
+            return False
+        ttl = max(5, settings.API_REQUEST_TIMEOUT + 10)
+        timeout = ttl + 5
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                if await self.redis_cache.acquire_lock(key, ttl=ttl):
+                    return True
+            except Exception as exc:
+                logger.warning(f"Redis stampede 门闩异常, 直接打上游: {exc}")
+                return False
+            await asyncio.sleep(0.02)
+        logger.warning("Redis stampede 门闩等待超时, 直接打上游")
+        return False
 
     def reset_health(self):
         """复位熔断器 (测试隔离 / 配置变更后用)。"""
@@ -468,10 +504,47 @@ class GoogleTranslateProvider(BaseProvider):
             if trace is not None:
                 trace["cache_hit"] = True
             return cached
-        metrics.cache_misses.inc()
-        if trace is not None:
-            trace["cache_hit"] = False
+        lock = self._singleflight_lock(key)
+        async with lock:
+            cached = await self._cache_get(key)
+            if cached is not None:
+                logger.debug("cache hit")
+                metrics.cache_hits.inc()
+                if trace is not None:
+                    trace["cache_hit"] = True
+                return cached
+            metrics.cache_misses.inc()
+            if trace is not None:
+                trace["cache_hit"] = False
+            lock_held = await self._wait_for_redis_lock(key)
+            try:
+                cached = await self._cache_get(key)
+                if cached is not None:
+                    logger.debug("cache hit")
+                    metrics.cache_hits.inc()
+                    if trace is not None:
+                        trace["cache_hit"] = True
+                    return cached
+                return await self._translate_uncached(
+                    text, source_lang, target_lang, record_health, trace, key
+                )
+            finally:
+                if lock_held and self.redis_cache is not None:
+                    try:
+                        await self.redis_cache.release_lock(key)
+                    except Exception as exc:
+                        logger.warning(f"Redis stampede 门闩释放失败: {exc}")
 
+    async def _translate_uncached(
+        self,
+        text: str,
+        source_lang: str,
+        target_lang: str,
+        record_health: bool,
+        trace: dict[str, Any] | None,
+        key: str,
+    ) -> str:
+        """已确认缓存未命中且持有单飞门闩, 直接打上游 (v2.2.0 提取)。"""
         if self.circuit_breaker and not self.circuit_breaker.allow():
             raise HTTPException(status_code=503, detail="翻译服务暂时不可用")
 
