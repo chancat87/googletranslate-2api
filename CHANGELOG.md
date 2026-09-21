@@ -2,6 +2,18 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [2.9.1] - 2026-09-22
+
+### 文档 / 安全审计
+
+- 新增 `docs/IMMERSIVE_TRANSLATE_AUDIT.md`：分析用户提供的 Immersive Translate 扩展源码/网络包
+- 结论：不接入扩展内置 Google Key；该“匿名免费无限高并发”上游不成立
+- 保留合法多 Key 并发路径：env / 文件 / 批量 API / Key 自检
+
+### 验证
+
+- 文档死链检查通过；全量回归保持 **303 passed / 1 skipped**
+
 ## [2.9.0] - 2026-09-22
 
 ### 新增 (Key 可用性自检)
