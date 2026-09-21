@@ -2,6 +2,38 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [1.6.0] - 2026-09-22
+
+### 新增 (Redis 共享缓存 + E2E 验收)
+
+- **`CACHE_BACKEND=redis`**：多 worker / 多副本共用一份翻译缓存（统一前缀 + TTL），提升缓存命中率、减少打上游
+- **Redis 优雅降级**：连接失败/不可用时自动回退进程内内存缓存，服务不中断（启动告警日志）
+- **`docker-compose.yml` 内置 Redis 服务**：compose 部署默认启用共享缓存
+- **`scripts/e2e_smoke.py`**：真实 E2E 验收脚本（端点/流式/批量/检测/trace/缓存命中/错误矩阵/限流）
+- **`requirements.lock` 重编译**：新增 `redis`（运行时）与 `fakeredis`（测试）依赖
+
+### 验证
+
+- 全量回归 **215 passed / 1 skipped，覆盖率 99.71%**（1049 stmts, provider 100%）
+- ruff / mypy / format 全过
+- 真实 Key E2E：非流式/流式/批量/检测/models/traces/健康检查/文档全部 200
+- Redis 后端单测（fakeredis）：读写/TTL/前缀/降级/关闭清理 8 项通过
+
+## [1.5.3] - 2026-09-22
+
+### 新增 (高并发调优)
+
+- **`LOG_LEVEL` 可配**（`DEBUG`/`INFO`/`WARNING`/`ERROR`）：生产可关每请求 INFO 日志，降低写入与存储开销
+- **终端外自动关闭 ANSI 彩色日志**：重定向/容器内不再输出颜色转义码
+- **nginx `keepalive 32` + `worker_connections 4096`**：复用后端连接，减少高并发下 TCP 建连开销
+- **Docker `APP_WORKERS` 可配**（Dockerfile 默认 1，compose 默认 2 + `cpus: 2.0`）：多核部署可调 worker 数
+- **`scripts/loadtest.py --warm-repeat N`**：多 worker 压测时让每个 worker 都缓存同一批文本
+
+### 验证
+
+- 高并发调优实验见 `docs/loadtest-2026-09-22.md` 第七节（单 worker 缓存命中 15-35 QPS，真实上游单 Key 5-10 QPS，Windows 多 worker 受 accept 分配限制不提升）
+- 全量回归 **207 passed / 1 skipped**；ruff / mypy 通过
+
 ## [1.5.2] - 2026-09-22
 
 ### 新增 (阶段 0 文档 + 阶段 2.2 SKILL 体系)

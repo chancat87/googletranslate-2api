@@ -95,6 +95,12 @@ async def main() -> None:
     ap.add_argument("--levels", default="1,2,5,10,15,20,30,40")
     ap.add_argument("--per", type=int, default=20, help="每级请求数")
     ap.add_argument("--warm", type=int, default=40, help="cache 模式预热文本条数")
+    ap.add_argument(
+        "--warm-repeat",
+        type=int,
+        default=1,
+        help="每条预热文本重复请求次数 (多 worker 时>1, 让每个 worker 都缓存同一批文本)",
+    )
     ap.add_argument("--pause", type=float, default=1.0, help="每级之间暂停秒数")
     ap.add_argument("--stop-429-ratio", type=float, default=0.5, help="429 占比超过此值停止")
     ap.add_argument("--output", default="", help="结果 JSON 输出路径")
@@ -110,15 +116,18 @@ async def main() -> None:
         if args.mode == "cache":
             texts = [f"Hello world cached #{i} {uuid.uuid4().hex[:8]}" for i in range(args.warm)]
             # 预热: 每条文本先真实翻译一次入缓存
-            print(f"预热 {args.warm} 条文本入缓存 ...")
+            print(f"预热 {args.warm} 条文本入缓存 (每条重复 {args.warm_repeat} 次) ...")
             for i, t in enumerate(texts):
-                payload = json.dumps(
-                    {"messages": [{"role": "user", "content": t}], "stream": False}
-                )
-                r = await client.post(args.url, content=payload, headers=headers)
-                if r.status_code != 200:
-                    print(f"  预热失败 #{i}: HTTP {r.status_code} -> 中止")
-                    return
+                for rep in range(args.warm_repeat):
+                    payload = json.dumps(
+                        {"messages": [{"role": "user", "content": t}], "stream": False}
+                    )
+                    r = await client.post(args.url, content=payload, headers=headers)
+                    if r.status_code != 200:
+                        print(
+                            f"  预热失败 #{i} (重复 {rep + 1}/{args.warm_repeat}): HTTP {r.status_code} -> 中止"
+                        )
+                        return
             print("预热完成。")
 
             def text_provider(i: int) -> str:

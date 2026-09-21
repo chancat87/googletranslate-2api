@@ -25,16 +25,17 @@ def _log_sink(message):
 
 def _configure_logging():
     logger.remove()
+    level = settings.LOG_LEVEL.upper()
     if settings.LOG_FORMAT.lower() == "json":
-        logger.add(_log_sink, level="INFO", serialize=True)
+        logger.add(_log_sink, level=level, serialize=True)
     else:
         logger.add(
             _log_sink,
-            level="INFO",
+            level=level,
             format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
             "<level>{level: <8}</level> | "
             "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
-            colorize=True,
+            colorize=sys.stdout.isatty(),
         )
 
 

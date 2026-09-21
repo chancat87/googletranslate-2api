@@ -9,6 +9,8 @@ anyio==4.15.1
     #   httpx
     #   starlette
     #   watchfiles
+async-timeout==5.0.1
+    # via redis
 beautifulsoup4==4.15.0
     # via
     #   -r requirements.txt
@@ -62,6 +64,8 @@ python-dotenv==1.2.3
     #   uvicorn
 pyyaml==6.0.3
     # via uvicorn
+redis==8.1.0
+    # via -r requirements.txt
 six==1.17.0
     # via markdownify
 soupsieve==2.9.2

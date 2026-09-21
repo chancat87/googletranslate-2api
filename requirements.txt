@@ -8,6 +8,7 @@ beautifulsoup4
 markdownify
 cachetools
 prometheus_client
+redis
 
 # --- 开发 / 测试依赖 (pip install -r requirements-dev.txt) ---
 # pytest

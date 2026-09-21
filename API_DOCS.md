@@ -78,7 +78,7 @@ data: [DONE]
 }
 ```
 
-> `usage` 各字段为 `-1`, 因为翻译接口不消耗 token。
+> `usage` 为估算值 (`estimate: true`, 英文约 4 字符/token, 下限兜底 1), 因为翻译接口不消耗 token。
 
 #### 请求示例
 
@@ -134,13 +134,17 @@ print(resp.choices[0].message.content)
 }
 ```
 
-### 3. 健康检查 — `GET /health`
+### 3. 健康检查 — `GET /health` / `GET /ready`
 
 ```json
-{"status": "ok", "service": "googletranslate-2api", "version": "1.0.0"}
+{"status": "ok", "service": "googletranslate-2api", "version": "1.6.0"}
 ```
 
+`/ready` 为就绪探针（联动上游熔断状态），可用时返回 `{"status": "ready", "service": "googletranslate-2api"}`。
+
 ### 4. 根路径 — `GET /`
+
+返回服务欢迎信息与接口入口提示。
 
 ### 5. 链路摘要查询 — `GET /v1/traces/{request_id}` (v1.5.0, 需认证)
 
@@ -156,16 +160,64 @@ curl -H "Authorization: Bearer $API_MASTER_KEY" \
 
 **隐私**：只返回元数据（缓存命中/上游状态/耗时/Key 哈希/重试/熔断），不含请求原文与明文 Key。不存在返回 404。
 
-### 4.1 多上游 Key 池 (v1.5.0)
+### 6. 批量翻译 — `POST /v1/translate/batch` (v1.2.0, 需认证)
+
+并发翻译多条文本，内部限并发 `BATCH_MAX_CONCURRENCY`（默认 10），复用单条翻译逻辑与缓存。
+
+#### 请求参数 (JSON Body)
+
+| 字段 | 类型 | 必填 | 默认 | 说明 |
+|------|------|------|------|------|
+| `texts` | array[string] | 是 | — | 待翻译文本列表，上限 `BATCH_MAX_ITEMS`（默认 50），单条上限 `MAX_TEXT_LENGTH` |
+| `source_lang` | string | 否 | `auto` | 源语言代码 |
+| `target_lang` | string | 否 | `zh-CN` | 目标语言代码 |
+
+#### 响应
+
+每条独立返回，单条失败不影响其他；整体预算 `BATCH_DEADLINE_SECONDS`（默认 120s），超时条目标记 `error=timeout`：
+
+```json
+{
+  "object": "list",
+  "data": [
+    {"text": "apple", "translated": "苹果", "ok": true, "error": null},
+    {"text": "bad", "translated": "", "ok": false, "error": "timeout"}
+  ],
+  "count": 2
+}
+```
+
+#### 请求示例
+
+```bash
+curl -X POST http://localhost:8088/v1/translate/batch \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $API_MASTER_KEY" \
+  -d '{"texts":["apple","banana"],"target_lang":"zh-CN"}'
+```
+
+### 7. 语言检测 — `POST /v1/translate/detect` (v1.2.0, 需认证)
+
+基于字符集/脚本的轻量推断（`source=script_heuristic`），返回命中脚本族与自动路由目标语言。**非 Google 官方语言检测**。
+
+```bash
+curl -X POST http://localhost:8088/v1/translate/detect \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $API_MASTER_KEY" \
+  -d '{"text":"hello world"}'
+```
+
+```json
+{"object": "language_detection", "scripts": [], "target_lang": "zh-CN", "source": "script_heuristic", "note": "基于字符集的轻量推断, 非 Google 官方语言检测"}
+```
+
+### 8. 多上游 Key 池 (v1.5.0)
 
 配置 `GOOGLE_API_KEYS="key1,key2"`（逗号分隔）：
 
 - 403 / 429 / 网络错误自动切换到下一个 Key，全部耗尽才失败（403 → `upstream_auth_error`）
 - 失败 Key 进入冷却（`KEY_FAILOVER_COOLDOWN_SECONDS`，默认 60s），到期前不再优先选用
 - `/metrics` 新增 `translate_key_switches_total`、`translate_requests_by_key_hash_total{key,result}`、`translate_upstream_errors_by_key_hash_total{key,code}`、`translate_key_pool_status{key,state}`
-
-
-返回服务欢迎信息。
 
 ---
 
@@ -254,8 +306,14 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 | `GOOGLE_API_KEYS` | 否 | — | 多上游 Key 池（逗号分隔），403/429/网络自动切换；缺省回退 `GOOGLE_API_KEY` |
 | `KEY_FAILOVER_COOLDOWN_SECONDS` | 否 | 60 | Key 失败冷却秒数 |
 | `TRACE_STORE_MAXLEN` | 否 | 512 | 链路摘要环形缓冲上限 |
+| `CACHE_BACKEND` | 否 | `memory` | 缓存后端: `memory` 或 `redis` (多 worker/副本共享, v1.6.0) |
+| `REDIS_URL` | 否 | `redis://127.0.0.1:6379/0` | Redis 连接串 (仅 `CACHE_BACKEND=redis` 时使用) |
+| `CACHE_PREFIX` | 否 | `g2api:` | Redis key 前缀, 隔离多服务命名空间 |
 | `HTTPX_MAX_CONNECTIONS` | 否 | 0(自动) | HTTPX 上游连接池上限 (0=max(10, BATCH_MAX_CONCURRENCY+5))，高并发可调大 |
 | `HTTPX_MAX_KEEPALIVE_CONNECTIONS` | 否 | 0(自动) | HTTPX 连接池 keepalive 上限 (0=max(5, BATCH_MAX_CONCURRENCY)) |
+| `LOG_FORMAT` | 否 | `text` | 日志格式: `text` 或 `json` |
+| `LOG_LEVEL` | 否 | `INFO` | 日志级别: `DEBUG`/`INFO`/`WARNING`/`ERROR`; 高并发生产建议 `WARNING` |
+| `APP_WORKERS` | 否 | `1` | uvicorn worker 数 (Docker/多核部署设置 ≈ CPU 核数; 进程内缓存/限流/trace 不共享) |
 | `API_MASTER_KEY` | 否 | — | 主密钥; `1` 或空表示关闭认证 |
 | `NGINX_PORT` | 否 | `8088` | 对外暴露端口 |
 | `API_REQUEST_TIMEOUT` | 否 | `60` | 上游请求超时 (秒) |
@@ -272,7 +330,7 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 - ✅ 可直接用 OpenAI SDK / 任意支持 OpenAI 的客户端
 - ⚠️ 翻译语义非对话语义: 仅取最后一条用户消息翻译, 忽略 `system`/历史消息
 - ⚠️ 不支持 `temperature`、`top_p`、`max_tokens` 等采样参数 (传入即忽略)
-- ⚠️ `usage` 为占位 `-1`, 不计费
+- ⚠️ `usage` 为估算值 (`estimate: true`), 不计费
 
 翻译扩展字段 (`source_lang` / `target_lang`) 非 OpenAI 标准, 通过 `extra_body` 传递。
 

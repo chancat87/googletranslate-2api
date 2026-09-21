@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     )
 
     APP_NAME: str = "googletranslate-2api"
-    APP_VERSION: str = "1.5.2"
+    APP_VERSION: str = "1.6.0"
     DESCRIPTION: str = "一个将 Google Translate API 转换为兼容 OpenAI 格式的代理。"
 
     API_MASTER_KEY: str | None = None
@@ -43,10 +43,14 @@ class Settings(BaseSettings):
     STREAM_CHUNK_THRESHOLD: int = 500
     STREAM_CHUNK_MAX: int = 500
 
-    # --- P1.2 缓存: 内存 TTL-LRU ---
+    # --- P1.2 缓存: 内存 TTL-LRU / Redis 共享缓存 (v1.6.0) ---
     CACHE_ENABLED: bool = True
     CACHE_MAXSIZE: int = 1000
     CACHE_TTL: int = 3600
+    # 共享缓存后端: memory | redis (多 worker/多副本共用一份翻译缓存)
+    CACHE_BACKEND: str = "memory"
+    REDIS_URL: str = "redis://127.0.0.1:6379/0"
+    CACHE_PREFIX: str = "g2api:"
 
     # --- P1.6 输入长度上限 ---
     MAX_TEXT_LENGTH: int = 5000
@@ -66,6 +70,8 @@ class Settings(BaseSettings):
 
     # --- P2.4 结构化日志 ---
     LOG_FORMAT: str = "text"
+    # 高并发调优: 生产可设 WARNING/ERROR 减少每请求日志开销 (v1.5.3)
+    LOG_LEVEL: str = "INFO"
 
     # --- M3 上游重试: 指数退避 + 抖动 (仅对网络异常/429/5xx) ---
     UPSTREAM_RETRY_ATTEMPTS: int = 3

@@ -1,6 +1,6 @@
 [project]
 name = "googletranslate-2api"
-version = "1.2.0"
+version = "1.6.0"
 description = "Google Translate -> OpenAI 兼容 API 代理"
 requires-python = ">=3.10"
 

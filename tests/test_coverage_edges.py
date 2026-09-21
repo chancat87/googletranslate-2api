@@ -260,6 +260,10 @@ class TestMainEdgeCoverage:
         monkeypatch.setattr(cfg.settings, "LOG_FORMAT", "text")
         app_main._configure_logging()  # 覆盖 text 分支
 
+    def test_configure_logging_level_override(self, monkeypatch):
+        monkeypatch.setattr(cfg.settings, "LOG_LEVEL", "WARNING")
+        app_main._configure_logging()  # 覆盖非默认日志级别分支
+
     def test_extract_bearer_token_malformed(self):
         assert app_main._extract_bearer_token("Basic abc") is None
         assert app_main._extract_bearer_token(None) is None

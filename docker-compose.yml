@@ -21,14 +21,37 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      # 高并发: worker 数随 CPU 上调 (默认 2, 进程内缓存/限流/trace 不共享)
+      APP_WORKERS: "${APP_WORKERS:-2}"
+      # v1.6.0: 共享缓存走内置 Redis, 多 worker/副本共用一份翻译缓存
+      CACHE_BACKEND: "${CACHE_BACKEND:-redis}"
+      REDIS_URL: "${REDIS_URL:-redis://redis:6379/0}"
+    depends_on:
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=2)"]
       interval: 30s
       timeout: 3s
       start_period: 5s
       retries: 3
-    mem_limit: 400m
-    cpus: "1.0"
+    mem_limit: 800m
+    cpus: "2.0"
+    networks:
+      - googletranslate-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: googletranslate-2api-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "no", "--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 2s
+      start_period: 3s
+      retries: 5
     networks:
       - googletranslate-net
 

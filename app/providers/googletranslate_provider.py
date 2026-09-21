@@ -27,7 +27,14 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from loguru import logger
 from markdownify import markdownify as md
 
-from app.core.cache import cache_get, cache_key, cache_put, make_cache
+from app.core.cache import (
+    RedisCacheBackend,
+    cache_get,
+    cache_key,
+    cache_put,
+    make_cache,
+    make_redis_cache,
+)
 from app.core.circuit_breaker import CircuitBreaker
 from app.core.config import settings
 from app.core.key_pool import KeyPool, key_hash
@@ -68,6 +75,7 @@ class GoogleTranslateProvider(BaseProvider):
     def __init__(self):
         self.client: httpx.AsyncClient | None = None
         self.cache = make_cache()
+        self.redis_cache: RedisCacheBackend | None = None
         self.circuit_breaker: CircuitBreaker | None = None
         # 阶段 1.1: 多 Key 池 (initialize 时创建; _translate 惰性兜底)
         self.key_pool: KeyPool | None = None
@@ -102,12 +110,36 @@ class GoogleTranslateProvider(BaseProvider):
         )
         # 每次初始化重建缓存, 避免跨测试/重启的脏数据
         self.cache = make_cache()
+        if settings.CACHE_BACKEND.lower() == "redis":
+            self.redis_cache = await make_redis_cache()
+            if self.redis_cache is None:
+                logger.warning("Redis 缓存不可用, 已回退进程内内存缓存")
+        else:
+            self.redis_cache = None
         self.key_pool = KeyPool(keys, cooldown_seconds=settings.KEY_FAILOVER_COOLDOWN_SECONDS)
         self.reset_health()
 
     async def close(self):
+        if self.redis_cache is not None:
+            await self.redis_cache.aclose()
+            self.redis_cache = None
         if self.client:
             await self.client.aclose()
+
+    async def _cache_get(self, key: str) -> str | None:
+        """统一缓存读: Redis 后端异步读, 内存后端同步读 (v1.6.0)。"""
+        if self.redis_cache is not None:
+            return await self.redis_cache.get(key)
+        return cache_get(self.cache, key)
+
+    async def _cache_put(self, key: str, value: str) -> None:
+        """统一缓存写: 仅写成功结果, 空值不缓存 (v1.6.0)。"""
+        if not value:
+            return
+        if self.redis_cache is not None:
+            await self.redis_cache.set(key, value)
+            return
+        cache_put(self.cache, key, value)
 
     def reset_health(self):
         """复位熔断器 (测试隔离 / 配置变更后用)。"""
@@ -304,7 +336,7 @@ class GoogleTranslateProvider(BaseProvider):
     ) -> list[str]:
         text = text.strip()  # 3.C.3: 仅 strip 首尾空白, 归一化缓存 key
         key = cache_key(text, source_lang, target_lang)
-        cached = cache_get(self.cache, key)
+        cached = await self._cache_get(key)
         if cached is not None:
             logger.debug("cache hit")
             metrics.cache_hits.inc()
@@ -363,7 +395,7 @@ class GoogleTranslateProvider(BaseProvider):
     ) -> str:
         text = text.strip()  # 3.C.3: 仅 strip 首尾空白, 归一化缓存 key
         key = cache_key(text, source_lang, target_lang)
-        cached = cache_get(self.cache, key)
+        cached = await self._cache_get(key)
         if cached is not None:
             logger.debug("cache hit")
             metrics.cache_hits.inc()
@@ -436,7 +468,7 @@ class GoogleTranslateProvider(BaseProvider):
             if not markdown_text:
                 logger.warning("上游返回空翻译结果")
             else:
-                cache_put(self.cache, key, markdown_text)
+                await self._cache_put(key, markdown_text)
             metrics.requests_by_key.labels(key=key_hash(gk), result="ok").inc()
             self._sync_key_pool_metrics()
             return markdown_text

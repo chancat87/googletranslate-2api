@@ -440,6 +440,18 @@ googletranslate-2api/
        # ... 翻译逻辑
    ```
 
+### 实测调优指引 (v1.6.0, 见 docs/loadtest-2026-09-22.md)
+
+真实压测基线: 单 worker 缓存命中承载约 15-35 QPS; 真实上游单 Key 约 5-10 QPS (conc≤40 全 200, 温和压测 0 个 429)。要更高并发, 按收益排序:
+
+1. **多上游 Key** — `GOOGLE_API_KEYS="k1,k2,..."`。真实翻译吞吐唯一线性扩展手段, N 个 Key ≈ N×10 QPS。
+2. **Docker/Linux + nginx 分摊** — `APP_WORKERS≈CPU 核数` (Dockerfile 已支持 `${APP_WORKERS}`, compose 默认 2 + `cpus: 2.0`), nginx 已启用 `keepalive 32`。Linux 无 Windows 的 accept 分配不均问题, 缓存命中承载随 worker 线性涨。
+3. **调大上游连接池** — `HTTPX_MAX_CONNECTIONS=40`、`HTTPX_MAX_KEEPALIVE_CONNECTIONS=20` (conc 20 实测 10.1 QPS, 默认池约 5-9 QPS)。
+4. **降低日志开销** — `LOG_FORMAT=json` + `LOG_LEVEL=WARNING` (本版新增; 终端外自动关闭 ANSI 彩色)。
+5. **Redis 共享缓存 (v1.6.0 已实现)** — `CACHE_BACKEND=redis` + `REDIS_URL`, 多 worker/多副本共用翻译缓存, 提高命中率、减少打上游; Redis 不可用时自动回退内存缓存。compose 部署默认已带 Redis 服务。
+
+> Windows 本地 `uvicorn --workers N` 实测不提升吞吐 (共享监听 socket 连接分配不均), 多 worker 请走 Linux 容器 + nginx/负载均衡。
+
 ---
 
 ## 🚧 开发路线图
@@ -460,6 +472,8 @@ googletranslate-2api/
 - [x] 连接池参数可配 + 真实并发压测基线 (v1.5.1, 见 docs/loadtest-2026-09-22.md)
 - [x] SECURITY.md / docs/rotate-key.md / curl 附录自动刷新 (v1.5.2)
 - [x] Skills 四件套 (v1.5.2, 见 skills/)
+- [x] LOG_LEVEL 可配 + 终端外关闭 ANSI 彩色 + nginx keepalive + APP_WORKERS 可配 (v1.5.3)
+- [x] Redis 共享缓存 + 优雅降级 + compose 内置 Redis + E2E 验收脚本 (v1.6.0)
 
 ### 🚀 近期规划 (v1.1)
 - [ ] 真正的实时流式翻译（按句增量推送）
