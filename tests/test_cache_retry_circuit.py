@@ -255,6 +255,20 @@ class TestConnectionPool:
         finally:
             await p.close()
 
+    @pytest.mark.asyncio
+    async def test_initialize_respects_explicit_pool_params(self, monkeypatch):
+        # v1.5.1: HTTPX_MAX_CONNECTIONS / HTTPX_MAX_KEEPALIVE_CONNECTIONS 显式覆盖
+        monkeypatch.setattr(cfg.settings, "HTTPX_MAX_CONNECTIONS", 25)
+        monkeypatch.setattr(cfg.settings, "HTTPX_MAX_KEEPALIVE_CONNECTIONS", 8)
+        p = GoogleTranslateProvider()
+        await p.initialize()
+        try:
+            pool = p.client._transport._pool
+            assert pool._max_connections == 25
+            assert pool._max_keepalive_connections == 8
+        finally:
+            await p.close()
+
 
 # ---------- M5: 批量整体 deadline ----------
 
