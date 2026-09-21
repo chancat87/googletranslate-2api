@@ -211,3 +211,15 @@ Redis / Secret 示例 + Kustomize），并给 Dockerfile/compose 增加优雅停
 | 仅文件加载 | ✅ 测试通过 |
 | 文件缺失回退 | ✅ 回退 `GOOGLE_API_KEY` |
 | 全量回归 | ✅ 297 passed / 1 skipped，覆盖率 98.91% |
+
+## 十六、v2.9.0 Key 可用性自检 (2026-09-22)
+
+**交付**: 管理 API + Web UI 对 Key 池逐 Key 探测上游，快速定位失效 Key。
+
+| 项 | 结果 |
+|---|---|
+| `POST /v1/admin/keys/probe` | ✅ 返回 key_hash + http_status/ok |
+| 只回传哈希 | ✅ 不泄露明文 |
+| Web UI“验证 Keys” | ✅ 正常/失败状态 + toast 汇总 |
+| Playwright 浏览器 E2E | ✅ 含验证 Keys 步骤 PASS |
+| 全量回归 | ✅ 303 passed / 1 skipped，覆盖率 98.93% |

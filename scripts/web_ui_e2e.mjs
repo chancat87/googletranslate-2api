@@ -114,6 +114,12 @@ async function main() {
       undefined,
       { timeout: 10000 }
     );
+    await page.click('[data-action="probekeys"]');
+    await page.waitForFunction(
+      () => document.getElementById("toast").textContent.includes("验证完成"),
+      undefined,
+      { timeout: 15000 }
+    );
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForTimeout(400);

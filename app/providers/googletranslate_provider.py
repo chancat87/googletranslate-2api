@@ -919,6 +919,18 @@ class GoogleTranslateProvider(BaseProvider):
             "x-goog-api-key": google_api_key or "",
         }
 
+    async def probe_key(self, key: str) -> dict[str, Any]:
+        """v2.9.0: 用给定 Key 向真实上游发一次最小探测, 判断有效性。"""
+        if self.client is None:
+            return {"ok": False, "error": "uninitialized"}
+        payload = self._prepare_payload(settings.READY_PROBE_TEXT, "auto", "zh-CN")
+        headers = self._prepare_headers(key)
+        try:
+            resp = await self.client.post(self.upstream_url, headers=headers, json=payload)
+            return {"http_status": resp.status_code, "ok": resp.status_code == 200}
+        except _TRANSPORT_ERRORS as exc:
+            return {"ok": False, "error": "transport", "detail": str(exc)[:120]}
+
     def _prepare_payload(self, text: str, source_lang: str, target_lang: str) -> list:
         return [[[text], source_lang, target_lang], "te_lib"]
 

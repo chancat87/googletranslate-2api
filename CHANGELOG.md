@@ -2,6 +2,20 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [2.9.0] - 2026-09-22
+
+### 新增 (Key 可用性自检)
+
+- `POST /v1/admin/keys/probe`：每个 Key 一次最小上游探测，返回哈希 + `http_status/ok`
+- Web UI Keys 页新增“验证 Keys”：一键显示正常/失败状态
+- 不泄露明文 Key，自检失败不污染熔断计数
+
+### 验证
+
+- 新增 4 项：provider 200/transport、管理 API 结果、UI 入口断言
+- Playwright 浏览器 E2E 增加“验证 Keys”步骤并通过
+- 全量回归 **303 passed / 1 skipped，覆盖率 98.93%**；ruff / format / mypy / docs links 全过
+
 ## [2.8.0] - 2026-09-22
 
 ### 新增 (文件批量加载 Key)

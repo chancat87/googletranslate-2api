@@ -463,6 +463,24 @@ async def admin_keys_add_bulk(payload: AdminKeysBulkIn):
     return AdminKeysBulkOut(added=added, skipped=skipped, count=len(provider.key_pool))
 
 
+@app.post(
+    "/v1/admin/keys/probe",
+    dependencies=[Depends(verify_api_key)],
+    tags=["管理"],
+    summary="自检 Key 池有效性",
+)
+async def admin_keys_probe(limit: int = 20):
+    """v2.9.0: 每个 Key 打一次最小探测, 返回哈希 + http_status/ok, 不回传明文 Key。"""
+    if provider.key_pool is None:
+        raise HTTPException(status_code=400, detail="Key 池未初始化")
+    keys = provider.key_pool.keys[: max(1, min(limit, 100))]
+    results: list[dict[str, Any]] = []
+    for key in keys:
+        probe = await provider.probe_key(key)
+        results.append({"key_hash": key_hash(key), **probe})
+    return {"count": len(results), "results": results}
+
+
 @app.delete(
     "/v1/admin/keys/{key_hash_value}",
     dependencies=[Depends(verify_api_key)],

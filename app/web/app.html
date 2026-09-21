@@ -305,7 +305,7 @@
       </section>
       <section class="view" data-view="keys" id="view-keys" hidden>
         <div class="card">
-          <div class="card-head"><h2>Key 池运维</h2><span class="hint" id="keysSummary"></span></div>
+          <div class="card-head"><h2>Key 池运维</h2><button class="btn" data-action="probekeys">验证 Keys</button><span class="hint" id="keysSummary"></span></div>
           <div class="card-body">
             <div class="form-row" style="margin:0 0 12px">
               <input id="newKey" class="input" style="flex:3;min-width:220px" placeholder="粘贴新的 GOOGLE API Key">
@@ -548,6 +548,29 @@
         loadKeys();
       } catch (e) { toast("移除失败: " + e.message, "err"); }
     }
+    async function probeKeys() {
+      const btn = document.querySelector('[data-action="probekeys"]');
+      const old = btn ? btn.innerHTML : "";
+      if (btn) { btn.disabled = true; btn.textContent = "验证中…"; }
+      try {
+        const d = await api("/v1/admin/keys/probe?limit=50", { method: "POST" });
+        const okCount = d.results.filter((r) => r.ok).length;
+        const rows = d.results.map((r) =>
+          '<tr><td><code>' + esc(r.key_hash) + '</code></td>' +
+          '<td><span class="pill ' + (r.ok ? "ok" : "err") + '">' + (r.ok ? "正常" : "失败") + '</span></td>' +
+          '<td>' + esc(r.http_status == null ? (r.error || "未知") : r.http_status) + '</td></tr>'
+        ).join("");
+        $("keysSummary").textContent = "验证结果: " + okCount + " 正常 / " + (d.results.length - okCount) + " 失败";
+        $("keysBody").innerHTML =
+          '<table><thead><tr><th>Key 哈希</th><th>状态</th><th>上游</th></tr></thead><tbody>' +
+          rows + '</tbody></table>';
+        toast("验证完成: " + okCount + "/" + d.results.length + " 正常", okCount === d.results.length ? "ok" : "err");
+      } catch (e) {
+        toast("验证失败: " + e.message, "err");
+      } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = old || "验证 Keys"; }
+      }
+    }
 
     async function loadUsage() {
       $("usageBody").innerHTML = '<div class="empty">加载中…</div>';
@@ -694,6 +717,7 @@
       if (act.dataset.action === "theme") applyTheme(state.theme === "dark" ? "light" : "dark");
       if (act.dataset.action === "addkey") addKey();
       if (act.dataset.action === "bulkkeys") bulkImportKeys();
+      if (act.dataset.action === "probekeys") probeKeys();
       if (act.dataset.action === "removekey") removeKey(act.dataset.hash);
       if (act.dataset.action === "translate") doTranslate();
       if (act.dataset.action === "selfcheck") selfCheck();

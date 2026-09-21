@@ -78,6 +78,8 @@ curl -X POST http://127.0.0.1:8088/v1/translate/detect \
 Key 数量很多时，可以写到一个文件（每行一个，`#` 开头为注释），在 `.env` 设置
 `GOOGLE_API_KEYS_FILE=/path/to/keys.txt`，启动时自动并入 Key 池。
 
+在 Web UI Keys 页可点“验证 Keys”，批量探测每个 Key 的上游状态，快速找出失效 Key。
+
 ### 共享缓存
 
 ```dotenv

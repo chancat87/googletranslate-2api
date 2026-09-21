@@ -63,3 +63,9 @@ def test_ui_has_bulk_key_import():
     html = (ROOT / "app" / "web" / "app.html").read_text(encoding="utf-8")
     assert "批量导入" in html
     assert 'data-action="bulkkeys"' in html
+
+
+def test_ui_has_key_probe():
+    html = (ROOT / "app" / "web" / "app.html").read_text(encoding="utf-8")
+    assert "验证 Keys" in html
+    assert 'data-action="probekeys"' in html
