@@ -2,6 +2,19 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [1.6.1] - 2026-09-22
+
+### 变更
+
+- **CI 质量门禁覆盖 `scripts/`**: ruff check / format 现在包含 `scripts/`（e2e_smoke / loadtest）
+- **E2E 缓存命中断言改为 `X-Trace-Summary` 响应头**: 多 worker/多副本下 trace 表按进程隔离, 头断言在单/多 worker 均可靠
+
+### 验证
+
+- 全量回归 **215 passed / 1 skipped，覆盖率 99.90%**；ruff / mypy 全过
+- Windows 原生真实 Key E2E 四模式全过：内存 18/18、认证 20/20、Redis 降级 18/18、限流 19/19
+- Linux 容器 E2E 尝试：本机 WSL2 Docker 周期性回收容器（纯 `sleep` 容器 ~4 分钟即 `exit 255`），判定为环境限制；稳定 Docker host 复跑命令见 `docs/ACCEPTANCE_2026-09-22.md`
+
 ## [1.6.0] - 2026-09-22
 
 ### 新增 (Redis 共享缓存 + E2E 验收)

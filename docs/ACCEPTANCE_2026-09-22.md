@@ -40,3 +40,21 @@
 1. **Linux 容器多 worker + 真实 Redis 的 E2E**: 本机无 Docker/Redis, 已提供 `docker-compose.yml` (内置 redis) 与 `scripts/e2e_smoke.py`; 在 Linux 主机 `docker compose up -d --build` 后复跑同一脚本即可验收。
 2. **多上游 Key 实测**: 仅 1 个可用 Key; 多 Key 池逻辑已有 32 项单测, 真实 N×QPS 需准备 N 个 Key 后复测。
 3. **Git 历史中的 Key 轮换**: 见 `docs/AUDIT_2026-09-22.md` 高优先级发现。
+
+## 六、Linux 容器 E2E 尝试与结论 (2026-09-22, v1.6.1)
+
+本机启用 WSL2 Ubuntu 24.04 + Docker (29.7.2, compose v5.5.0) 尝试完整容器验收:
+
+1. `docker compose up -d --build` 成功: nginx / app / redis 三容器启动, redis healthy, app healthy。
+2. **环境限制确认**: 包括纯 `python -c "time.sleep(600)"` 对照容器在内, 所有容器在 ~4 分钟后被系统以 `exit 255` 终止 (无日志、无 OOM、dmesg 无 kill 记录) —— WSL2 Docker VM 周期性回收容器进程, 与项目代码无关 (纯 sleep 容器同样被杀)。
+3. 结果: Linux 容器内完整 E2E 未能在本机稳定跑完; 项目代码正确性以 Windows 原生真实 Key E2E (四模式 18-20/19 全过) + 215 项单测 + 容器内可正常启动/健康/Redis 连接建连为准。
+
+**在稳定 Docker host 上验收的命令**:
+
+```bash
+docker compose up -d --build
+# 在任意能访问 8088 的机器 (或容器内):
+python scripts/e2e_smoke.py --url http://<host>:8088 --expect-version 1.6.1
+# 跨进程 Redis 共享缓存: 起两个 app 进程/容器共用同一 Redis, A 翻译一次, B 再翻同文本,
+# 响应头 X-Trace-Summary 应显示 cache=hit。
+```

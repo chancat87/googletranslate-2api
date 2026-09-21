@@ -17,10 +17,10 @@ jobs:
         run: pip install -r requirements-dev.txt pytest-cov ruff mypy prometheus_client
 
       - name: Ruff lint
-        run: python -m ruff check app main.py tests
+        run: python -m ruff check app main.py tests scripts
 
       - name: Ruff format check
-        run: python -m ruff format --check app main.py tests
+        run: python -m ruff format --check app main.py tests scripts
 
       - name: Mypy type check
         run: python -m mypy app main.py

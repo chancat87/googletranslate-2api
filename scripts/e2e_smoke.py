@@ -111,7 +111,7 @@ def main() -> int:
         ok = r.status_code == 200 and "data: {" in r.text and "data: [DONE]" in r.text
         check("stream translate (SSE)", ok, str(r.text[:80]))
 
-        # --- 缓存命中 (trace 复验) ---
+        # --- 缓存命中 (X-Trace-Summary 头复验; 多 worker 下 trace 查询可能落不同进程) ---
         r1 = c.post(
             f"{base}/v1/chat/completions",
             json={
@@ -120,12 +120,10 @@ def main() -> int:
                 "stream": False,
             },
         )
-        id2 = r1.json().get("id", "") if r1.status_code == 200 else ""
-        trace_hit = False
-        if id2:
-            tr = c.get(f"{base}/v1/traces/{id2}")
-            trace_hit = tr.status_code == 200 and tr.json().get("cache_hit") is True
-        check("cache hit via trace", r1.status_code == 200 and trace_hit, f"id={id2}")
+        summary = r1.headers.get("x-trace-summary", "")
+        check(
+            "cache hit (X-Trace-Summary)", r1.status_code == 200 and "cache=hit" in summary, summary
+        )
 
         # --- 批量 ---
         r = c.post(
