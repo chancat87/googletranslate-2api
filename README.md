@@ -31,7 +31,7 @@
 *   **🏗️ 稳定架构**：基于 FastAPI 和 Nginx 构建，具备优秀的性能和并发处理能力
 *   **🔁 多 Key 自动切换 (v1.5.0)**：`GOOGLE_API_KEYS` 多上游 Key 池，403/429/网络错误自动降级，单 Key 失效不再全挂
 *   **🔍 链路摘要 (v1.5.0)**：`X-Trace-Summary` / `/v1/traces/{request_id}` 把缓存命中、上游耗时、所用 Key、重试/熔断状态一目了然，小白也能排障
-*   **🖥️ 管理面板 (v2.0.0)**：`/admin` 原生单文件 Web UI：总览 / Key 池运维（只存哈希）/ 按 Key 用量 / 最近请求 / 一键自检
+*   **🖥️ Web UI (v2.5.0)**：`/app` 中文操作界面：翻译工作台 + 总览 / Key 池 / 用量 / 最近请求，`/admin` 兼容共用同一套页面
 *   **📖 中文教程 (v2.0.0)**：见 `docs/TUTORIAL.md`，新手到进阶一站式
 *   **📊 用量与配额 (v2.1.0)**：按上游 Key 哈希 SQLite 持久化用量，`USAGE_DAY_QUOTA` 配额用尽自动切 Key/429
 *   **🔌 WebSocket 翻译 (v2.1.0)**：`/v1/ws/translate` chunk 流式推送
@@ -88,7 +88,7 @@ graph TB
 
 ### 三步部署指南
 
-> 启动后访问：API `http://127.0.0.1:8088` · API 文档 `http://127.0.0.1:8088/docs` · 管理面板 `http://127.0.0.1:8088/admin`（教程见 `docs/TUTORIAL.md`）。
+> 启动后访问：Web UI `http://127.0.0.1:8088/app` · 管理面板 `http://127.0.0.1:8088/admin` · API 文档 `http://127.0.0.1:8088/docs`（教程见 `docs/TUTORIAL.md`）。
 
 1. **克隆项目**
    ```bash

@@ -2,6 +2,21 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [2.5.0] - 2026-09-22
+
+### 新增 (现代化 Web UI)
+
+- `GET /app` 新前端入口（`/admin` 兼容共用）：翻译工作台（流式/非流式）+ 总览健康 + Key 池 + 用量 + 最近请求 + 设置
+- 无构建静态单文件：CSS/JS 内联、零外部依赖、深浅主题、桌面侧栏 / 移动底部导航、`prefers-reduced-motion` 支持
+- 响应式：320px 起适配，`100dvh` + safe-area，移动触控目标 ≥44px，表格横向滚动
+- 安全渲染：所有用户/API 数据经 HTML 转义后输出，Token 只存 localStorage
+
+### 验证
+
+- Web UI 路由验收 3 项：`/app` 与 `/admin` 均返回 HTML、无外部资产依赖、响应式/主题标记存在
+- JS 语法经 Node `--check` 通过；进程级 mock E2E API 20/20 + UI 入口 PASS
+- 全量回归 **285 passed / 1 skipped，覆盖率 98.89%**；ruff / format / mypy / 文档死链全过
+
 ## [2.4.0] - 2026-09-22
 
 ### 新增 (K8s Schema 校验收口)

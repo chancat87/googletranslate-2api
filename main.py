@@ -454,11 +454,22 @@ async def admin_traces(limit: int = 50):
     }
 
 
+def _web_ui() -> HTMLResponse:
+    """v2.5.0 管理面板 (原生单文件 UI, 无外部依赖)。"""
+    path = Path(__file__).resolve().parent / "app" / "web" / "app.html"
+    return HTMLResponse(path.read_text(encoding="utf-8"))
+
+
+@app.get("/app", include_in_schema=False)
+async def app_ui():
+    """Web UI 前端入口 (v2.5.0)。"""
+    return _web_ui()
+
+
 @app.get("/admin", include_in_schema=False)
 async def admin_ui():
-    """v2.0.0 管理面板 (原生单文件 UI, 无外部依赖)。"""
-    path = Path(__file__).resolve().parent / "app" / "web" / "admin.html"
-    return HTMLResponse(path.read_text(encoding="utf-8"))
+    """兼容入口: v2.0.0 起为管理面板, v2.5.0 起与 /app 共用同一套 UI。"""
+    return _web_ui()
 
 
 @app.websocket("/v1/ws/translate")

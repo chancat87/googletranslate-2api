@@ -123,7 +123,7 @@ Redis / Secret 示例 + Kustomize），并给 Dockerfile/compose 增加优雅停
 | Dockerfile 优雅停机 | ✅ `STOPSIGNAL SIGTERM` + `--timeout-graceful-shutdown 30` |
 | compose 停止宽限 | ✅ `stop_grace_period: 35s` |
 | 进程级 E2E（mock 上游 + 认证, v2.3.0） | ✅ 20/20 全过 |
-| 全量回归 | ✅ 282 passed / 1 skipped，覆盖率 98.88% |
+| 全量回归 | ✅ 285 passed / 1 skipped，覆盖率 98.89% |
 | ruff / format / mypy / docs links | ✅ 全过 |
 
 **说明**: 本机无 `kubectl`，清单以 YAML 解析 + 结构断言验收；有集群时按
@@ -143,3 +143,19 @@ Redis / Secret 示例 + Kustomize），并给 Dockerfile/compose 增加优雅停
 | CI kubeconform 步骤 | ✅ 已加入 `.github/workflows/ci.yml` |
 | 清单结构断言 | ✅ 补齐 Pod/容器 securityContext 与 CI 步骤断言 |
 | 全量回归 | ✅ 281 passed / 1 skipped，覆盖率 98.88% |
+
+## 十一、v2.5.0 Web UI 前端 (2026-09-22)
+
+**交付**: `/app` 现代化中文 Web UI + `/admin` 兼容入口，翻译工作台与运维面板合并。
+
+| 项 | 结果 |
+|---|---|
+| `/app` 可访问 | ✅ 200 text/html，包含“管理面板” |
+| `/admin` 可访问 | ✅ 与 `/app` 共用同一页面 |
+| 无外部资产 | ✅ 0 个 `http(s)`/CDN/script src/link rel 依赖 |
+| 响应式标记 | ✅ `@media (max-width: 1023px)` / `640px`，移动底部导航，safe-area |
+| 主题与动效 | ✅ `data-theme` 深浅色 + `prefers-reduced-motion` |
+| 渲染安全 | ✅ 数据全部经 HTML 转义 |
+| JS 语法 | ✅ Node `--check` 通过 |
+| 进程级 E2E | ✅ mock 上游 API 矩阵 20/20 + UI `/app`、`/admin` 均 PASS |
+| 全量回归 | ✅ 285 passed / 1 skipped，覆盖率 98.89% |
