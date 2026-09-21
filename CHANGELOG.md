@@ -2,6 +2,26 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [1.3.1] - 2026-09-21
+
+### 安全加固（3.B 审查修复, code-review 子代理审计后落地）
+- **P1-1**：`.env.example` 主密钥示例值清空；命中公开示例/弱 key 标记默认**拒绝启动**（`ALLOW_WEAK_API_KEY=true` 才显式放行）
+- **P2-1**：非 ASCII Bearer token 返回 401（不再触发 `hmac.compare_digest` TypeError → 500 + 日志轰炸）
+- **P2-2**：限流桶有界（`RATE_LIMIT_MAX_KEYS`，OrderedDict LRU 淘汰），防随机 key 内存 DoS
+- **P2-3**：`TRUST_PROXY_HEADER`（默认关，防伪造）开启后按 `X-Forwarded-For` 首跳做 IP 维度限流
+- **P2-4**：上游 403 返回独立语义 `upstream_auth_error`（非流式）+ SSE 明确文案，可区分永久凭证错误
+- **P3-2/3/4/6/7/9**：非分支状态补告警日志；`_clean_response` 异常消息截断（上游原始响应不再进日志）；批量失败日志不再记录用户原文；nginx 注释补 `limit_req_status 429`；限流中间件复用 `_extract_bearer_token`；`initialize()` 校验 GOOGLE_API_KEY 示例占位符
+
+### 工程
+- 新增 `requirements.lock`（`uv pip compile` 生成，锁定全部运行依赖版本）
+- `Dockerfile` 改用锁文件安装依赖（镜像构建可复现）
+- `stop.ps1` 修复：Windows 下 uvicorn --reload 需整树终止（reloader 父 + spawn worker 子），否则端口被继承 socket 占住
+- 真实脚本 E2E 验证 `start.ps1` / `stop.ps1`（起服务→翻译→停止→端口释放→无残留）
+
+### 验证
+- 全量回归 **157 passed / 1 skipped，覆盖率 100%**（736 stmts）
+- ruff check / format 0，mypy 0
+- 真实上游集成回归通过（有效 key 下 PASSED）
 ## [1.3.0] - 2026-09-21
 
 ### 新增 (3.B 安全加固)

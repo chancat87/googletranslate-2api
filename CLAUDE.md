@@ -176,4 +176,4 @@ curl -X POST "http://localhost:8088/v1/chat/completions" \
 - 缓存 / 限流为进程内实现，多 worker / 多副本不共享
 - `GOOGLE_API_KEY` 历史泄漏：需用户在谷歌侧轮换（key 已失效）
 - 真实上游集成测试需有效 key + `RUN_REAL_INTEGRATION=1`，默认 skip
-- `requirements.txt` 未锁具体版本（建议按需用 pip-compile 生成锁文件）
+- 依赖锁版本文件 `requirements.lock`（由 `uv pip compile` 生成）；升级依赖后需重新生成

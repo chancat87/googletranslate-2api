@@ -12,9 +12,9 @@ ENV PYTHONIOENCODING=utf-8
 WORKDIR /app
 
 # 安装 Python 依赖
-COPY requirements.txt .
+COPY requirements.txt requirements.lock ./
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements.lock
 
 # 复制应用代码
 COPY . .
