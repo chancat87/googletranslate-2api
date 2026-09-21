@@ -1,24 +1,22 @@
 import json
 import time
-from typing import Dict, Any, Optional
+from typing import Any
 
 DONE_CHUNK = b"data: [DONE]\n\n"
 
 
-def create_sse_data(data: Dict[str, Any]) -> bytes:
+def create_sse_data(data: dict[str, Any]) -> bytes:
     """将字典数据格式化为 SSE 事件字符串。"""
-    return f"data: {json.dumps(data)}\n\n".encode('utf-8')
+    return f"data: {json.dumps(data)}\n\n".encode()
 
 
 def create_chat_completion_chunk(
     request_id: str,
     model: str,
     content: str,
-    finish_reason: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    创建一个与 OpenAI 兼容的聊天补全流式块。
-    """
+    finish_reason: str | None = None,
+) -> dict[str, Any]:
+    """创建一个与 OpenAI 兼容的聊天补全流式块。"""
     return {
         "id": request_id,
         "object": "chat.completion.chunk",
@@ -28,9 +26,30 @@ def create_chat_completion_chunk(
             {
                 "index": 0,
                 "delta": {"content": content},
-                "finish_reason": finish_reason
+                "finish_reason": finish_reason,
             }
-        ]
+        ],
+    }
+
+
+def create_chat_completion_usage_chunk(
+    request_id: str,
+    model: str,
+    prompt_text: str,
+    completion_text: str,
+) -> dict[str, Any]:
+    """OpenAI `stream_options.include_usage` 要求流末尾附带 usage 块 (M8)。
+
+    语义: choices 为空数组, 携带 usage 字段; 供 OpenAI SDK 汇总计费。
+    """
+    usage = create_usage(prompt_text, completion_text)
+    return {
+        "id": request_id,
+        "object": "chat.completion.chunk",
+        "created": int(time.time()),
+        "model": model,
+        "choices": [],
+        "usage": usage,
     }
 
 
@@ -41,18 +60,28 @@ def estimate_tokens(text: str) -> int:
     return max(1, len(text) // 4)
 
 
+def create_usage(prompt_text: str, completion_text: str) -> dict[str, Any]:
+    """构造 usage 对象 (估算值, estimate=True 标记)。"""
+    prompt_tokens = estimate_tokens(prompt_text)
+    completion_tokens = estimate_tokens(completion_text)
+    return {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": prompt_tokens + completion_tokens,
+        "estimate": True,
+    }
+
+
 def create_chat_completion(
     request_id: str,
     model: str,
     content: str,
     prompt_text: str = "",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """创建与 OpenAI 兼容的非流式聊天补全响应。
 
-    usage 为粗估值 (无分词器), 以 estimate 标记, 替代旧版写死的 -1。
+    usage 为粗估值 (无分词器), 以 estimate 标记。
     """
-    prompt_tokens = estimate_tokens(prompt_text)
-    completion_tokens = estimate_tokens(content)
     return {
         "id": request_id,
         "object": "chat.completion",
@@ -65,10 +94,5 @@ def create_chat_completion(
                 "finish_reason": "stop",
             }
         ],
-        "usage": {
-            "prompt_tokens": prompt_tokens,
-            "completion_tokens": completion_tokens,
-            "total_tokens": prompt_tokens + completion_tokens,
-            "estimate": True,
-        },
+        "usage": create_usage(prompt_text, content),
     }

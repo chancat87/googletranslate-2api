@@ -1,28 +1,36 @@
+"""集中配置 (pydantic-settings)。
+
+注意: 本模块在导入时即创建 `settings` 单例并读取 .env / 环境变量, 之后不再刷新。
+因此测试必须在 import 本模块之前预置必要的环境变量 (见 tests/conftest.py 顶层)。
+"""
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import Optional, List
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
-        env_file_encoding='utf-8',
-        extra="ignore"
+        env_file_encoding="utf-8",
+        extra="ignore",
     )
 
     APP_NAME: str = "googletranslate-2api"
-    APP_VERSION: str = "1.1.0"
+    APP_VERSION: str = "1.2.0"
     DESCRIPTION: str = "一个将 Google Translate API 转换为兼容 OpenAI 格式的代理。"
 
-    API_MASTER_KEY: Optional[str] = None
+    API_MASTER_KEY: str | None = None
     NGINX_PORT: int = 8088
 
-    GOOGLE_API_KEY: Optional[str] = None
+    GOOGLE_API_KEY: str | None = None
 
     API_REQUEST_TIMEOUT: int = 60
 
     DEFAULT_MODEL: str = "google-translate"
-    KNOWN_MODELS: List[str] = ["google-translate"]
+    KNOWN_MODELS: list[str] = ["google-translate"]
+    # 模型别名: 客户端硬编码的模型名 -> 本项目实际模型 (P2-3 / M9)
+    MODEL_ALIASES: dict[str, str] = {}
 
-    # --- P1.1 流式分批: 长文本按句切分, 默认关 (切句会丢跨句上下文) ---
+    # --- P1.1 流式分批: 长文本按段切分, 默认关 (切段会丢跨段上下文) ---
     STREAM_CHUNK_ENABLED: bool = False
     STREAM_CHUNK_THRESHOLD: int = 500
     STREAM_CHUNK_MAX: int = 500
@@ -41,8 +49,31 @@ class Settings(BaseSettings):
     # --- P2.2 批量翻译并发 ---
     BATCH_MAX_CONCURRENCY: int = 10
     BATCH_MAX_ITEMS: int = 50
+    # 批量整体预算 (秒): 超时后未完成条目标记 error=timeout (M5)
+    BATCH_DEADLINE_SECONDS: int = 120
 
     # --- P2.4 结构化日志 ---
     LOG_FORMAT: str = "text"
+
+    # --- M3 上游重试: 指数退避 + 抖动 (仅对网络异常/429/5xx) ---
+    UPSTREAM_RETRY_ATTEMPTS: int = 3
+    UPSTREAM_RETRY_BACKOFF_BASE: float = 0.5
+    UPSTREAM_RETRY_MAX_BACKOFF: float = 3.0
+    UPSTREAM_RETRY_JITTER: float = 0.3
+
+    # --- M4 熔断: 滑动窗口 ---
+    CIRCUIT_BREAKER_ENABLED: bool = True
+    CIRCUIT_FAILURE_THRESHOLD: int = 10
+    CIRCUIT_WINDOW_SECONDS: int = 60
+    CIRCUIT_OPEN_SECONDS: int = 30
+
+    # --- M6 限流 (默认关, 按 IP + 认证 key 双维度) ---
+    RATE_LIMIT_ENABLED: bool = False
+    RATE_LIMIT_CAPACITY: int = 30
+    RATE_LIMIT_PER_SECOND: float = 10.0
+
+    # --- M12 指标 ---
+    METRICS_ENABLED: bool = True
+
 
 settings = Settings()
