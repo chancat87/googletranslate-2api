@@ -38,6 +38,7 @@ services:
       retries: 3
     mem_limit: 800m
     cpus: "2.0"
+    stop_grace_period: 35s
     networks:
       - googletranslate-net
 

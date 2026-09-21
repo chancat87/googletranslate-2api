@@ -1,0 +1,19 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: googletranslate-2api
+  labels:
+    app.kubernetes.io/name: googletranslate-2api
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: translate.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: googletranslate-2api
+                port:
+                  number: 80

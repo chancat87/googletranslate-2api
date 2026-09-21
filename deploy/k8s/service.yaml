@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: googletranslate-2api
+  labels:
+    app.kubernetes.io/name: googletranslate-2api
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: googletranslate-2api
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP

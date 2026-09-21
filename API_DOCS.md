@@ -137,7 +137,7 @@ print(resp.choices[0].message.content)
 ### 3. 健康检查 — `GET /health` / `GET /ready`
 
 ```json
-{"status": "ok", "service": "googletranslate-2api", "version": "2.2.0"}
+{"status": "ok", "service": "googletranslate-2api", "version": "2.3.0"}
 ```
 
 `/ready` 为就绪探针（联动上游熔断状态），可用时返回 `{"status": "ready", "service": "googletranslate-2api"}`。

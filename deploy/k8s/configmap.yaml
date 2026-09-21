@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: googletranslate-2api-config
+  labels:
+    app.kubernetes.io/name: googletranslate-2api
+data:
+  LOG_LEVEL: "WARNING"
+  LOG_FORMAT: "json"
+  CACHE_BACKEND: "redis"
+  REDIS_URL: "redis://redis:6379/0"
+  TRACE_BACKEND: "redis"
+  RATE_LIMIT_BACKEND: "redis"
+  UPSTREAM_BASE_URL: "https://translate-pa.googleapis.com"
+  METRICS_ENABLED: "true"

@@ -109,3 +109,22 @@ QPS `26.8 / 23.8 / 22.8 / 21.7`，p95 `41.4 / 268.4 / 418.2 / 414.5ms`。
 **真实 Google 上游复测 (2026-09-22)**: 使用历史 `.env` Key 启动后，上游返回 **400**，
 E2E 仅 14/20（非流式/批量/cache 断言受影响），判定为凭证失效而非代码缺陷；真实上游验收需新 Key，
 详见 `docs/AUDIT_2026-09-22.md`。
+
+## 九、v2.3.0 K8s 部署 + 优雅停机 (2026-09-22)
+
+**功能**: 新增 `deploy/k8s/` 原生清单（ConfigMap / Deployment / Service / HPA / Ingress /
+Redis / Secret 示例 + Kustomize），并给 Dockerfile/compose 增加优雅停机配置。
+
+**验收结果**:
+
+| 项 | 结果 |
+|---|---|
+| K8s 清单 YAML 解析与结构 | ✅ 12/12（文件齐全、滚动策略、探针、优雅终止、HPA/Ingress/Redis） |
+| Dockerfile 优雅停机 | ✅ `STOPSIGNAL SIGTERM` + `--timeout-graceful-shutdown 30` |
+| compose 停止宽限 | ✅ `stop_grace_period: 35s` |
+| 进程级 E2E（mock 上游 + 认证, v2.3.0） | ✅ 20/20 全过 |
+| 全量回归 | ✅ 281 passed / 1 skipped，覆盖率 98.88% |
+| ruff / format / mypy / docs links | ✅ 全过 |
+
+**说明**: 本机无 `kubectl`，清单以 YAML 解析 + 结构断言验收；有集群时按
+`deploy/k8s/README.md` 执行 `kubectl apply -k deploy/k8s` 后再做滚动发布压测。

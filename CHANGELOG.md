@@ -2,6 +2,21 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [2.3.0] - 2026-09-22
+
+### 新增 (K8s 部署清单 + 优雅停机)
+
+- **`deploy/k8s/` 原生清单**：Deployment / Service / HPA / Ingress / ConfigMap / Secret 示例 / Redis（Deployment+Service），Kustomize 一键 `kubectl apply -k`
+- **滚动发布安全**：`maxUnavailable: 0` + `maxSurge: 1`，`/health` 存活探针 + `/ready` 就绪探针，未就绪不入流量
+- **优雅停机**：Dockerfile 增加 `STOPSIGNAL SIGTERM` 与 uvicorn `--timeout-graceful-shutdown 30`（`APP_SHUTDOWN_GRACE` 可配），compose 与 K8s 均设 35s 终止宽限
+- **无状态化说明**：内存态（缓存/熔断/限流/trace）随 Pod 消亡无副作用；多副本共享缓存/限流/trace 走 Redis（清单已内置）
+
+### 验证
+
+- 新增 12 项 K8s 清单验收：文件齐全、YAML 可解析、Deployment 滚动策略/探针/优雅终止、Service/HPA/Ingress/Redis/ConfigMap 结构
+- 全量回归 **281 passed / 1 skipped，覆盖率 98.88%**；ruff / format / mypy / 文档死链全过
+- 进程级 mock E2E 与基准见验收文档；真实 Google 上游仍被历史 Key 失效阻塞，待新 Key
+
 ## [2.2.0] - 2026-09-22
 
 ### 新增 (缓存 stampede 防护)

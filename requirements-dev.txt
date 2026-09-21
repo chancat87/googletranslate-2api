@@ -2,3 +2,4 @@
 pytest>=7.0
 pytest-asyncio>=0.21
 fakeredis>=2.0
+PyYAML>=6.0

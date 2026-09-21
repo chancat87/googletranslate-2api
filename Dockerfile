@@ -30,4 +30,6 @@ USER appuser
 # 暴露端口并启动
 EXPOSE 8000
 ENV APP_WORKERS=1
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port 8000 --workers ${APP_WORKERS:-1}"]
+ENV APP_SHUTDOWN_GRACE=30
+STOPSIGNAL SIGTERM
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port 8000 --workers ${APP_WORKERS:-1} --timeout-graceful-shutdown ${APP_SHUTDOWN_GRACE:-30}"]

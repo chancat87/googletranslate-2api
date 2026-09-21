@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: googletranslate-2api
+  labels:
+    app.kubernetes.io/name: googletranslate-2api
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: "0"
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: googletranslate-2api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: googletranslate-2api
+    spec:
+      terminationGracePeriodSeconds: 35
+      securityContext:
+        runAsNonRoot: true
+        allowPrivilegeEscalation: false
+      containers:
+        - name: app
+          image: lza6/googletranslate-2api:v2.3.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: googletranslate-2api-config
+            - secretRef:
+                name: googletranslate-2api-secret
+          env:
+            - name: APP_WORKERS
+              value: "2"
+            - name: APP_SHUTDOWN_GRACE
+              value: "30"
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "2"
+              memory: 800Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
