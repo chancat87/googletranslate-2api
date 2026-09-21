@@ -86,13 +86,18 @@ class GoogleTranslateProvider(BaseProvider):
             raise ValueError("GOOGLE_API_KEY / GOOGLE_API_KEYS 未在 .env 文件中配置。")
         if any("在这里填入" in k for k in keys):
             raise ValueError("GOOGLE_API_KEY 仍是示例占位符, 请填入真实 Key 后启动。")
-        # 3.D.5: 显式连接池限制, 与批量并发参数匹配, 避免默认池争抢
-        pool_conns = max(10, settings.BATCH_MAX_CONCURRENCY + 5)
+        # 3.D.5 / v1.5.1: 显式连接池限制; HTTPX_MAX_CONNECTIONS=0 时自动按批量并发推导
+        pool_conns = max(0, settings.HTTPX_MAX_CONNECTIONS) or max(
+            10, settings.BATCH_MAX_CONCURRENCY + 5
+        )
+        pool_keepalive = max(0, settings.HTTPX_MAX_KEEPALIVE_CONNECTIONS) or max(
+            5, settings.BATCH_MAX_CONCURRENCY
+        )
         self.client = httpx.AsyncClient(
             timeout=settings.API_REQUEST_TIMEOUT,
             limits=httpx.Limits(
                 max_connections=pool_conns,
-                max_keepalive_connections=max(5, settings.BATCH_MAX_CONCURRENCY),
+                max_keepalive_connections=pool_keepalive,
             ),
         )
         # 每次初始化重建缓存, 避免跨测试/重启的脏数据

@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     )
 
     APP_NAME: str = "googletranslate-2api"
-    APP_VERSION: str = "1.5.0"
+    APP_VERSION: str = "1.5.1"
     DESCRIPTION: str = "一个将 Google Translate API 转换为兼容 OpenAI 格式的代理。"
 
     API_MASTER_KEY: str | None = None
@@ -55,6 +55,10 @@ class Settings(BaseSettings):
     READY_PROBE_TEXT: str = "hi"
 
     # --- P2.2 批量翻译并发 ---
+    # --- v1.5.1: HTTPX 连接池 (0 = 自动 = max(10, BATCH_MAX_CONCURRENCY+5) / max(5, BATCH_MAX_CONCURRENCY)) ---
+    HTTPX_MAX_CONNECTIONS: int = 0
+    HTTPX_MAX_KEEPALIVE_CONNECTIONS: int = 0
+
     BATCH_MAX_CONCURRENCY: int = 10
     BATCH_MAX_ITEMS: int = 50
     # 批量整体预算 (秒): 超时后未完成条目标记 error=timeout (M5)
