@@ -2,6 +2,19 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [1.5.2] - 2026-09-22
+
+### 新增 (阶段 0 文档 + 阶段 2.2 SKILL 体系)
+
+- **`SECURITY.md`**：安全模型（认证/输入边界/上游密钥/限流/失败兜底/已知边界）
+- **`docs/rotate-key.md`**：谷歌侧轮换 + git filter-repo 历史清理指引（不可逆操作需你确认后执行）
+- **`scripts/refresh_curl_appendix.ps1`**：一键刷新真实 curl 输出附录（`docs/curl_appendix.md`），防文档漂移
+- **`skills/` 四件套**：install / use / debug / extend（anthropics SKILL.md 规范），沉淀使用者技能、预留多模态/新 SKILL 打包规范
+
+### 验证
+- 真实运行 `refresh_curl_appendix.ps1` 产出 `docs/curl_appendix.md`（真实 curl 输出）
+- 全量回归 **206 passed / 1 skipped，覆盖率 100%**（996 stmts）；ruff / mypy / format 0
+
 ## [1.5.1] - 2026-09-22
 
 ### 新增 (真实并发压测 + 连接池可配)

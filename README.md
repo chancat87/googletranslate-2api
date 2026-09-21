@@ -457,6 +457,9 @@ googletranslate-2api/
 - [x] 多上游 Key 池 + 403/429/网络自动切换 + 冷却 (v1.5.0)
 - [x] 链路摘要 X-Trace-Summary / /v1/traces/{request_id} (v1.5.0)
 - [x] Key 维度用量指标 /metrics (v1.5.0)
+- [x] 连接池参数可配 + 真实并发压测基线 (v1.5.1, 见 docs/loadtest-2026-09-22.md)
+- [x] SECURITY.md / docs/rotate-key.md / curl 附录自动刷新 (v1.5.2)
+- [x] Skills 四件套 (v1.5.2, 见 skills/)
 
 ### 🚀 近期规划 (v1.1)
 - [ ] 真正的实时流式翻译（按句增量推送）
@@ -628,7 +631,11 @@ stop.ps1          :: 停止监听 8088 的服务
 
 ---
 
-## 真实调用输出附录（2026-09-21 实测, 有效 GOOGLE_API_KEY）
+## 真实调用输出附录
+
+> 由 `scripts/refresh_curl_appendix.ps1` 生成（点击查看 [docs/curl_appendix.md](docs/curl_appendix.md)）；历史快照：
+
+## 历史附录快照（2026-09-21 实测, 有效 GOOGLE_API_KEY）
 
 > 以下为对本地真实服务（`uvicorn main:app`）用 curl 实跑的原始响应摘录，Authorization 已掩码；与当前代码一致，非编造。
 
