@@ -214,3 +214,52 @@ class TestTokenBucket:
         assert rl.allow("a") is True
         assert rl.allow("a") is False
         assert rl.allow("b") is True
+
+
+def _cache_hit_count() -> float:
+    """读取进程内 cache_hit_total 计数 (用于命中指标断言)。"""
+    import re
+
+    from app.core.metrics import metrics
+
+    m = re.search(r"cache_hit_total ([\d.]+)", metrics.render().decode())
+    return float(m.group(1)) if m else 0.0
+
+
+class TestCacheNormalization:
+    """3.C.3: 首尾空白归一化 -> 同文本不同空白共享缓存, 命中不打上游。"""
+
+    @pytest.mark.asyncio
+    async def test_translate_whitespace_normalized_key(self):
+        p = _provider_with_mock_client()
+        p.client.post.return_value = _resp("你好")
+        await p._translate(" hello ", "auto", "zh-CN")
+        await p._translate("hello", "auto", "zh-CN")  # strip 后缓存命中
+        assert p.client.post.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_stream_translate_whitespace_normalized_key(self):
+        p = _provider_with_mock_client()
+        p.client.post.return_value = _resp("你好")
+        await p._stream_translate("  hello  ", "auto", "zh-CN")
+        await p._stream_translate("hello", "auto", "zh-CN")
+        assert p.client.post.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_batch_whitespace_shared_cache(self):
+        """批量条目带首尾空白与不带 -> 共享缓存, 只打一次上游 (3.C 验收)。"""
+        p = _provider_with_mock_client()
+        p.client.post.return_value = _resp("你好")
+        results = await p.translate_batch([" hello ", "hello"], "auto", "zh-CN")
+        assert all(r["ok"] and r["translated"] for r in results)
+        assert p.client.post.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_whitespace_cache_hit_metric(self):
+        """命中后 cache_hit_total 增加 (命中率可观测)。"""
+        p = _provider_with_mock_client()
+        p.client.post.return_value = _resp("你好")
+        before = _cache_hit_count()
+        await p._translate("hello", "auto", "zh-CN")  # miss
+        await p._translate(" hello ", "auto", "zh-CN")  # strip -> hit
+        assert _cache_hit_count() == before + 1

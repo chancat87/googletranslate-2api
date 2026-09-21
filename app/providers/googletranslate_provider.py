@@ -227,6 +227,7 @@ class GoogleTranslateProvider(BaseProvider):
 
     # --- 翻译分发: 缓存命中直接返回; 长文本可选分段 (P1.1 + P1.2 + M17) ---
     async def _stream_translate(self, text: str, source_lang: str, target_lang: str) -> list[str]:
+        text = text.strip()  # 3.C.3: 仅 strip 首尾空白, 归一化缓存 key
         key = cache_key(text, source_lang, target_lang)
         cached = cache_get(self.cache, key)
         if cached is not None:
@@ -270,6 +271,7 @@ class GoogleTranslateProvider(BaseProvider):
     async def _translate(
         self, text: str, source_lang: str, target_lang: str, record_health: bool = True
     ) -> str:
+        text = text.strip()  # 3.C.3: 仅 strip 首尾空白, 归一化缓存 key
         key = cache_key(text, source_lang, target_lang)
         cached = cache_get(self.cache, key)
         if cached is not None:
