@@ -2,6 +2,21 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [2.1.0] - 2026-09-22
+
+### 新增 (用量计费 + WebSocket + 供应链安全 + 基准自动化)
+
+- **按 Key 用量持久化与配额** (`USAGE_STORE_ENABLED=true` + `USAGE_DAY_QUOTA`)：SQLite 聚合（只存哈希），配额用尽自动切 Key/429，管理面板用量接口读取
+- **WebSocket 翻译网关** `/v1/ws/translate`：chunk/done/error 消息，支持 `?token=` 认证
+- **供应链安全 CI**：gitleaks（历史已知泄漏不阻塞留证）+ SBOM(SPDX) + trivy fs 扫描
+- **基准自动化**：`scripts/mock_upstream.py`（确定性 mock 上游）+ `scripts/bench_ci.py`（一键起服跑 loadtest），`UPSTREAM_BASE_URL` 可覆盖
+
+### 验证
+
+- 全量回归见验收报告；ruff / mypy / format 0
+- UsageStore 单测（聚合/配额）+ provider 配额切 Key/429 + WebSocket 4 用例 + mock 上游形状
+- `scripts/bench_ci.py` 本地实测跑通
+
 ## [2.0.0] - 2026-09-22
 
 ### 新增 (管理 API + 管理面板 + 小白体验)

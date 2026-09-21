@@ -42,6 +42,7 @@ from app.core.key_pool import KeyPool, key_hash
 from app.core.languages import auto_detect_target, is_supported
 from app.core.metrics import metrics
 from app.core.trace import TraceStore, format_trace_summary
+from app.core.usage_store import UsageStore
 from app.providers.base_provider import BaseProvider
 from app.utils.sse_utils import (
     DONE_CHUNK,
@@ -77,6 +78,7 @@ class GoogleTranslateProvider(BaseProvider):
         self.client: httpx.AsyncClient | None = None
         self.cache = make_cache()
         self.redis_cache: RedisCacheBackend | None = None
+        self.usage_store: UsageStore | None = None
         self.upstream_url = settings.UPSTREAM_BASE_URL.rstrip("/") + "/v1/translateHtml"
         self.circuit_breaker: CircuitBreaker | None = None
         # 阶段 1.1: 多 Key 池 (initialize 时创建; _translate 惰性兜底)
@@ -124,6 +126,10 @@ class GoogleTranslateProvider(BaseProvider):
                 logger.warning("Redis 缓存不可用, 已回退进程内内存缓存")
         else:
             self.redis_cache = None
+        if settings.USAGE_STORE_ENABLED:
+            self.usage_store = UsageStore(settings.USAGE_DB_PATH)
+        else:
+            self.usage_store = None
         self.key_pool = KeyPool(keys, cooldown_seconds=settings.KEY_FAILOVER_COOLDOWN_SECONDS)
         self.reset_health()
 
@@ -132,6 +138,8 @@ class GoogleTranslateProvider(BaseProvider):
             await self.redis_cache.aclose()
             self.redis_cache = None
         await self.trace_store.aclose()
+        if self.usage_store is not None:
+            self.usage_store.close()
         if self.client:
             await self.client.aclose()
 
@@ -478,11 +486,19 @@ class GoogleTranslateProvider(BaseProvider):
         last_resp: httpx.Response | None = None
         last_transport: BaseException | None = None
         used_keys: list[str] = []
+        quota_blocked = False
         for _ in range(max(1, len(pool))):
             gk = pool.next()
             if gk is None or gk in used_keys:
                 break
             used_keys.append(gk)
+            if (
+                self.usage_store is not None
+                and settings.USAGE_DAY_QUOTA > 0
+                and await self.usage_store.quota_exceeded(key_hash(gk), settings.USAGE_DAY_QUOTA)
+            ):
+                quota_blocked = True
+                continue
             if len(used_keys) > 1:
                 metrics.key_switches.inc()
             logger.info(
@@ -527,6 +543,13 @@ class GoogleTranslateProvider(BaseProvider):
                 logger.warning("上游返回空翻译结果")
             else:
                 await self._cache_put(key, markdown_text)
+            if self.usage_store is not None:
+                await self.usage_store.record(
+                    key_hash(gk),
+                    requests=1,
+                    chars_in=len(text),
+                    chars_out=len(markdown_text),
+                )
             metrics.requests_by_key.labels(key=key_hash(gk), result="ok").inc()
             self._sync_key_pool_metrics()
             return markdown_text
@@ -535,9 +558,13 @@ class GoogleTranslateProvider(BaseProvider):
         if trace is not None:
             trace["used_key"] = key_hash(used_keys[-1]) if used_keys else None
             trace["upstream_status"] = last_resp.status_code if last_resp is not None else None
+        if self.usage_store is not None and used_keys:
+            await self.usage_store.record(key_hash(used_keys[-1]), errors=1)
         if used_keys:
             metrics.requests_by_key.labels(key=key_hash(used_keys[-1]), result="error").inc()
         self._sync_key_pool_metrics()
+        if quota_blocked and last_resp is None and last_transport is None:
+            raise HTTPException(status_code=429, detail="今日上游 Key 配额已用尽")
         if last_resp is not None:
             self._log_upstream_error(last_resp, last_resp.status_code)
             raise httpx.HTTPStatusError(

@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     )
 
     APP_NAME: str = "googletranslate-2api"
-    APP_VERSION: str = "2.0.0"
+    APP_VERSION: str = "2.1.0"
     DESCRIPTION: str = "一个将 Google Translate API 转换为兼容 OpenAI 格式的代理。"
 
     API_MASTER_KEY: str | None = None
@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     API_REQUEST_TIMEOUT: int = 60
     # v2.1.0: 上游基址可覆盖 (压测/本地 mock; 默认 Google translate-pa)
     UPSTREAM_BASE_URL: str = "https://translate-pa.googleapis.com"
+    # v2.1.0: 按上游 Key 哈希的用量持久化 (SQLite, 默认关)
+    USAGE_STORE_ENABLED: bool = False
+    USAGE_DB_PATH: str = "data/usage.db"
+    # 每个上游 Key 每日请求配额, 0=不限
+    USAGE_DAY_QUOTA: int = 0
 
     DEFAULT_MODEL: str = "google-translate"
     KNOWN_MODELS: list[str] = ["google-translate"]

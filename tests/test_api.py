@@ -86,10 +86,14 @@ async def test_openapi_docs_available(client):
 @pytest.mark.asyncio
 async def test_openapi_covers_all_public_routes(client):
     """3.F 验收: /docs (openapi.json) 覆盖所有公开路由 (排除 include_in_schema=False)。"""
+    from starlette.routing import WebSocketRoute
+
     spec = (await client.get("/openapi.json")).json()
     paths = set(spec["paths"])
     public = set()
     for route in app_main.app.routes:
+        if isinstance(route, WebSocketRoute):  # v2.1.0: WS 端点不进入 OpenAPI
+            continue
         path = getattr(route, "path", None)
         if not path:
             continue

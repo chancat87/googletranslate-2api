@@ -3,6 +3,8 @@
 import main as main_mod
 import pytest
 from app.core.key_pool import KeyPool, key_hash
+from app.core.metrics import metrics
+from app.core.usage_store import UsageStore
 from httpx import ASGITransport, AsyncClient
 
 MASTER = "admin-master-key-1234567890"
@@ -90,3 +92,49 @@ async def test_admin_traces_and_ui(monkeypatch):
         r = await c.get("/admin")
         assert r.status_code == 200
         assert "管理面板" in r.text
+
+
+@pytest.mark.asyncio
+async def test_admin_usage_metrics_and_store(monkeypatch, tmp_path):
+    _setup(monkeypatch)
+    metrics.translate_requests.labels(stream="false", result="started").inc()
+    metrics.requests_by_key.labels(key="abc12345", result="ok").inc()
+    monkeypatch.setattr(main_mod.provider, "usage_store", UsageStore(str(tmp_path / "u.db")))
+    await main_mod.provider.usage_store.record("abc12345", requests=7, chars_in=10, chars_out=8)
+    h = {"Authorization": f"Bearer {MASTER}"}
+    async with AsyncClient(transport=ASGITransport(app=main_mod.app), base_url="http://test") as c:
+        r = await c.get("/v1/admin/usage", headers=h)
+        body = r.json()
+        assert any(k["key_hash"] == "abc12345" for k in body["per_key"])
+        assert any(s["key_hash"] == "abc12345" and s["requests"] == 7 for s in body["store"])
+
+
+@pytest.mark.asyncio
+async def test_admin_keys_guards(monkeypatch):
+    _setup(monkeypatch)
+    h = {"Authorization": f"Bearer {MASTER}"}
+    async with AsyncClient(transport=ASGITransport(app=main_mod.app), base_url="http://test") as c:
+        monkeypatch.setattr(main_mod.provider, "key_pool", None)
+        r = await c.post("/v1/admin/keys", headers=h, json={"key": "k"})
+        assert r.status_code == 400  # key_pool 未初始化
+        r = await c.delete("/v1/admin/keys/00000000", headers=h)
+        assert r.status_code == 400
+
+        monkeypatch.setattr(main_mod.provider, "key_pool", KeyPool(["k1"], cooldown_seconds=0))
+        r = await c.post("/v1/admin/keys", headers=h, json={"key": "k1"})
+        assert r.status_code == 400  # 已存在
+
+
+def test_metric_samples_parse_and_disabled(monkeypatch):
+    class _R:
+        enabled = True
+
+        def render(self):
+            return b'x{"a"="1"} 1\ny{"b"="2"} 2\ny{"c"="bad"} nope\n'
+
+    monkeypatch.setattr(main_mod.metrics, "render", _R().render)
+    monkeypatch.setattr(main_mod.metrics, "enabled", True)
+    samples = main_mod._metric_samples("y")
+    assert [v for _, v in samples] == [2.0]  # 只保留可解析数值
+    monkeypatch.setattr(main_mod.metrics, "enabled", False)
+    assert main_mod._metric_samples("y") == []

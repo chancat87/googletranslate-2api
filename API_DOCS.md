@@ -234,6 +234,23 @@ curl -X POST http://localhost:8088/v1/translate/detect \
 
 打开 `http://<host>:8088/admin`，填入 `API_MASTER_KEY` 后使用。原生单文件 UI，无外部依赖。
 
+### 11. WebSocket 翻译 — `ws://<host>:8088/v1/ws/translate` (v2.1.0)
+
+发送 `{"text":"...","source_lang":"auto","target_lang":"zh-CN"}`，服务端返回 `{"type":"chunk","content":"..."}`，
+最后 `{"type":"done"}`；出错返回 `{"type":"error","message":"..."}`。开启认证时用 `?token=<API_MASTER_KEY>`。
+
+```python
+from websockets.sync.client import connect
+
+with connect("ws://127.0.0.1:8088/v1/ws/translate") as ws:
+    ws.send('{"text":"hello","target_lang":"zh-CN"}')
+    while True:
+        msg = ws.recv()
+        print(msg)
+        if '"type": "done"' in msg:
+            break
+```
+
 ---
 
 ## 支持的语言代码
@@ -338,6 +355,9 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 | `API_MASTER_KEY` | 否 | — | 主密钥; `1` 或空表示关闭认证 |
 | `NGINX_PORT` | 否 | `8088` | 对外暴露端口 |
 | `API_REQUEST_TIMEOUT` | 否 | `60` | 上游请求超时 (秒) |
+| `UPSTREAM_BASE_URL` | 否 | `https://translate-pa.googleapis.com` | 上游基址 (压测/mock 用, v2.1.0) |
+| `USAGE_STORE_ENABLED` | 否 | `false` | 按 Key 哈希用量持久化 (SQLite, v2.1.0) |
+| `USAGE_DAY_QUOTA` | 否 | `0` | 每个上游 Key 每日请求配额, 0=不限 |
 
 ---
 

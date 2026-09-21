@@ -33,3 +33,45 @@ jobs:
 
       - name: Docker build smoke
         run: docker build -t googletranslate-2api .
+
+  security-scan:
+    runs-on: ubuntu-latest
+    # 历史 commit 含已知泄漏 key (见 docs/AUDIT_2026-09-22.md), gitleaks 失败不阻塞发版, 但会留证
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Gitleaks secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_LICENSE: ""
+          GITLEAKS_NOTICE: ""
+      - name: SBOM (SPDX)
+        uses: anchore/sbom-action@v0
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: table
+          exit-code: "0"
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+
+  bench:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt pytest-cov ruff mypy prometheus_client
+      - name: Run deterministic bench (mock upstream)
+        run: python scripts/bench_ci.py --output bench.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench
+          path: bench.json

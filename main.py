@@ -14,7 +14,7 @@ from app.core.languages import is_supported
 from app.core.metrics import metrics
 from app.core.rate_limit import RateLimiter
 from app.providers.googletranslate_provider import GoogleTranslateProvider
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, WebSocket
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from loguru import logger
@@ -388,10 +388,14 @@ async def admin_usage():
     for labels, value in _metric_samples("translate_upstream_errors_by_key_hash_total"):
         key = labels.get("key", "?")
         errors.setdefault(key, {})[str(labels.get("code", "?"))] = value
+    store_totals: list[dict] = []
+    if provider.usage_store is not None:
+        store_totals = await provider.usage_store.totals()
     return {
         "per_key": [
             {"key_hash": k, "requests": d, "errors": errors.get(k, {})} for k, d in per_key.items()
         ],
+        "store": store_totals,
         "switches_total": _metric_total("translate_key_switches_total"),
     }
 
@@ -455,6 +459,59 @@ async def admin_ui():
     """v2.0.0 管理面板 (原生单文件 UI, 无外部依赖)。"""
     path = Path(__file__).resolve().parent / "app" / "web" / "admin.html"
     return HTMLResponse(path.read_text(encoding="utf-8"))
+
+
+@app.websocket("/v1/ws/translate")
+async def ws_translate(websocket: WebSocket):
+    """v2.1.0: WebSocket 翻译网关 (chunk/done/error 消息)。"""
+    await websocket.accept()
+    token = websocket.query_params.get("token")
+    master = settings.API_MASTER_KEY
+    if master and master != "1":
+        keys = [k.strip() for k in master.split(",") if k.strip()]
+        if not token or not any(hmac.compare_digest(token, k) for k in keys):
+            await websocket.send_json({"type": "error", "message": "认证失败"})
+            await websocket.close(code=4401)
+            return
+    try:
+        data = await websocket.receive_json()
+    except Exception:
+        await websocket.send_json({"type": "error", "message": "请求体无效"})
+        await websocket.close()
+        return
+    text = str(data.get("text", "")).strip()
+    if not text:
+        await websocket.send_json({"type": "error", "message": "text 不能为空"})
+        await websocket.close()
+        return
+    if len(text) > settings.MAX_TEXT_LENGTH:
+        await websocket.send_json(
+            {"type": "error", "message": f"文本超长, 上限 {settings.MAX_TEXT_LENGTH}"}
+        )
+        await websocket.close()
+        return
+    source = data.get("source_lang") or "auto"
+    target = data.get("target_lang") or "zh-CN"
+    if source != "auto" and not is_supported(source):
+        await websocket.send_json({"type": "error", "message": f"不支持的源语言: {source}"})
+        await websocket.close()
+        return
+    if not is_supported(target):
+        await websocket.send_json({"type": "error", "message": f"不支持的目标语言: {target}"})
+        await websocket.close()
+        return
+    try:
+        chunks = await provider._stream_translate(text, source, target)
+        for piece in chunks:
+            await websocket.send_json({"type": "chunk", "content": piece})
+        await websocket.send_json({"type": "done"})
+    except HTTPException as exc:
+        await websocket.send_json({"type": "error", "message": str(exc.detail)})
+    except Exception:
+        logger.exception("WebSocket 翻译失败")
+        await websocket.send_json({"type": "error", "message": "翻译失败"})
+    finally:
+        await websocket.close()
 
 
 # --- API 路由 ---
