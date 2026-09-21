@@ -159,3 +159,19 @@ Redis / Secret 示例 + Kustomize），并给 Dockerfile/compose 增加优雅停
 | JS 语法 | ✅ Node `--check` 通过 |
 | 进程级 E2E | ✅ mock 上游 API 矩阵 20/20 + UI `/app`、`/admin` 均 PASS |
 | 全量回归 | ✅ 285 passed / 1 skipped，覆盖率 98.89% |
+
+## 十二、v2.5.1 浏览器 E2E + 交互修复 (2026-09-22)
+
+**问题**: 浏览器实测发现点击“翻译”按钮被事件委托当成 `data-view` 导航处理，导致输出不更新。
+
+**修复**: 事件委托只匹配 `.nav-item, .nav-mobile-item`，操作按钮走 `data-action` 分支。
+
+**新增**: Playwright 浏览器 E2E（`scripts/web_ui_e2e.mjs` + `package.json`），已接入 CI。
+
+| 项 | 结果 |
+|---|---|
+| 本地 Playwright | ✅ PASS（桌面 1440×900 + 移动 390×844、dark theme、流式翻译、/admin、零 console error） |
+| 横向溢出 | ✅ 移动视口无横向滚动 |
+| CI Web UI browser E2E 步骤 | ✅ 已加入 `.github/workflows/ci.yml` |
+| 防回归断言 | ✅ 导航委托只匹配导航按钮类 |
+| 全量回归 | ✅ 288 passed / 1 skipped，覆盖率 98.89% |

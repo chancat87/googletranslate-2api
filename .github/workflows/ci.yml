@@ -40,6 +40,12 @@ jobs:
           tar -xzf /tmp/kubeconform.tar.gz -C /tmp
           /tmp/kubeconform -strict -ignore-missing-schemas -summary deploy/k8s
 
+      - name: Web UI browser E2E
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+          npm run web:ui:e2e
+
   security-scan:
     runs-on: ubuntu-latest
     # 历史 commit 含已知泄漏 key (见 docs/AUDIT_2026-09-22.md), gitleaks 失败不阻塞发版, 但会留证

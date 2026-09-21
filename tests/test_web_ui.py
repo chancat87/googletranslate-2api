@@ -1,8 +1,13 @@
 """Web UI 前端路由验收 (v2.5.0): /app 与 /admin 均可访问且无外部依赖。"""
 
+import json
+from pathlib import Path
+
 import main as main_mod
 import pytest
 from httpx import ASGITransport, AsyncClient
+
+ROOT = Path(__file__).resolve().parent.parent
 
 
 @pytest.fixture
@@ -36,3 +41,19 @@ async def test_ui_contains_responsive_and_theme_support(client):
     assert "@media (max-width: 640px)" in r.text
     assert "prefers-reduced-motion" in r.text
     assert "localStorage" in r.text
+
+
+def test_ci_has_web_ui_browser_e2e():
+    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert "Web UI browser E2E" in ci
+    assert "npm run web:ui:e2e" in ci
+
+
+def test_package_json_defines_web_ui_script():
+    pkg = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
+    assert pkg["scripts"]["web:ui:e2e"] == "node scripts/web_ui_e2e.mjs"
+
+
+def test_ui_nav_delegation_does_not_shadow_action_buttons():
+    html = (ROOT / "app" / "web" / "app.html").read_text(encoding="utf-8")
+    assert 'closest(".nav-item, .nav-mobile-item")' in html

@@ -2,6 +2,20 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [2.5.1] - 2026-09-22
+
+### 修复 / 测试
+
+- **Web UI 事件委托修复**：点击翻译等操作按钮不再被 `data-view` 区块“吞掉”（只匹配导航按钮类）
+- **浏览器 E2E 设施**：新增 `scripts/web_ui_e2e.mjs` + `package.json`，Playwright 真浏览器验证桌面/移动视口、深浅主题、翻译流式、控制台零错误、横向无溢出
+- **CI 接入**：每次 push 执行 Web UI browser E2E（`npm install` + `playwright install chromium` + `npm run web:ui:e2e`）
+- **防回归断言**：`tests/test_web_ui.py` 增加导航委托、CI 步骤、package 脚本静态断言
+
+### 验证
+
+- 本地 Playwright：`WEB UI BROWSER E2E: PASS`（1440×900 + 390×844、dark theme、翻译输出、/admin）
+- 全量回归 **288 passed / 1 skipped，覆盖率 98.89%**；ruff / format / mypy / docs links 全过
+
 ## [2.5.0] - 2026-09-22
 
 ### 新增 (现代化 Web UI)

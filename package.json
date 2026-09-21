@@ -1,0 +1,12 @@
+{
+  "name": "googletranslate-2api-web-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Web UI browser E2E tooling",
+  "scripts": {
+    "web:ui:e2e": "node scripts/web_ui_e2e.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0"
+  }
+}

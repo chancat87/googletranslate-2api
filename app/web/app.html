@@ -663,7 +663,7 @@
     }
 
     document.addEventListener("click", (e) => {
-      const nav = e.target.closest("[data-view]");
+      const nav = e.target.closest(".nav-item, .nav-mobile-item");
       if (nav) { showView(nav.dataset.view); return; }
       const act = e.target.closest("[data-action]");
       if (!act) return;

@@ -43,3 +43,7 @@ htmlcov/
 .ruff_cache/
 .mypy_cache/
 
+# --- Node 测试工具链 (仅浏览器 E2E 用) ---
+node_modules/
+package-lock.json
+
