@@ -2,7 +2,22 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [1.5.0] - 2026-09-21
+
+### 新增 (阶段 1.1/1.2/2.1 — 参考库对标落地)
+
+- **多上游 Key 池 (`GOOGLE_API_KEYS`)**：逗号分隔多 Key，403/429/transport 自动切换到下一 Key，全部耗尽才失败（保留最后一次响应语义，403 → `upstream_auth_error`）；单 Key 配置完全向后兼容
+- **Key 冷却退避 (`KEY_FAILOVER_COOLDOWN_SECONDS`)**：失败 Key 进入冷却，到期前不再优先选用；`/metrics` 暴露 `translate_key_pool_status` 各 Key 可用/冷却状态
+- **实测厂商语义 (2026-09-21)**：Google translate-pa 对无效 Key 返回 **400 "API key not valid"**（非 403/401），因此 400 也纳入换 Key 集合，坏 Key 不会拖垮服务（真实 E2E：坏 Key → 400 → 自动切真 Key → 200）
+- **链路摘要 (阶段 1.2)**：非流式响应头 `X-Trace-Summary`（cache/upstream/duration/key/retries/circuit），流式响应头 `X-Trace-Id` + 只读端点 `GET /v1/traces/{request_id}`（进程内环形缓冲 `TRACE_STORE_MAXLEN`，只含元数据，不含请求原文与明文 Key）
+- **Key 维度用量指标 (阶段 2.1)**：`translate_requests_by_key_hash_total{key,result}`、`translate_upstream_errors_by_key_hash_total{key,code}`、`translate_key_switches_total`
+
+### 验证
+- 新增 30 个测试（KeyPool / TraceStore / failover 切换 / 全耗降级 / 指标 / 端点）；全量回归 **203 passed / 1 skipped，覆盖率 100%**（990 stmts）
+- ruff / mypy / format 0；真实上游 E2E：坏 Key → 自动切换 → 真实翻译成功（见 README 附录）
+
 ## [1.4.4] - 2026-09-21
+
 
 ### 增强 (3.G 可观测性 + 3.I 清洁化)
 - **translate_duration_seconds histogram 接线**：翻译路径（/v1/chat/completions、/v1/translate/batch）请求耗时正式上报 `/metrics`

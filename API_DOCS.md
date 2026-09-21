@@ -142,6 +142,29 @@ print(resp.choices[0].message.content)
 
 ### 4. 根路径 — `GET /`
 
+### 5. 链路摘要查询 — `GET /v1/traces/{request_id}` (v1.5.0, 需认证)
+
+只读查询最近一次请求的链路摘要（进程内环形缓冲，上限 `TRACE_STORE_MAXLEN`）：
+
+- 非流式：响应头 `X-Trace-Summary`（`cache=… upstream=… 123ms key=<hash8> retries=…`）
+- 流式：响应头 `X-Trace-Id` → `GET /v1/traces/{request_id}` 查询
+
+```bash
+curl -H "Authorization: Bearer $API_MASTER_KEY" \
+  http://localhost:8088/v1/traces/chatcmpl-xxxxxxxx
+```
+
+**隐私**：只返回元数据（缓存命中/上游状态/耗时/Key 哈希/重试/熔断），不含请求原文与明文 Key。不存在返回 404。
+
+### 4.1 多上游 Key 池 (v1.5.0)
+
+配置 `GOOGLE_API_KEYS="key1,key2"`（逗号分隔）：
+
+- 403 / 429 / 网络错误自动切换到下一个 Key，全部耗尽才失败（403 → `upstream_auth_error`）
+- 失败 Key 进入冷却（`KEY_FAILOVER_COOLDOWN_SECONDS`，默认 60s），到期前不再优先选用
+- `/metrics` 新增 `translate_key_switches_total`、`translate_requests_by_key_hash_total{key,result}`、`translate_upstream_errors_by_key_hash_total{key,code}`、`translate_key_pool_status{key,state}`
+
+
 返回服务欢迎信息。
 
 ---
@@ -227,7 +250,10 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 
 | 变量 | 必填 | 默认 | 说明 |
 |------|------|------|------|
-| `GOOGLE_API_KEY` | 是 | — | Google Translate API 密钥 |
+| `GOOGLE_API_KEY` | 是* | — | Google Translate API 密钥（*设置 `GOOGLE_API_KEYS` 后可省略） |
+| `GOOGLE_API_KEYS` | 否 | — | 多上游 Key 池（逗号分隔），403/429/网络自动切换；缺省回退 `GOOGLE_API_KEY` |
+| `KEY_FAILOVER_COOLDOWN_SECONDS` | 否 | 60 | Key 失败冷却秒数 |
+| `TRACE_STORE_MAXLEN` | 否 | 512 | 链路摘要环形缓冲上限 |
 | `API_MASTER_KEY` | 否 | — | 主密钥; `1` 或空表示关闭认证 |
 | `NGINX_PORT` | 否 | `8088` | 对外暴露端口 |
 | `API_REQUEST_TIMEOUT` | 否 | `60` | 上游请求超时 (秒) |
