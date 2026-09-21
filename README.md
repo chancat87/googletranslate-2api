@@ -37,7 +37,7 @@
 *   **🔌 WebSocket 翻译 (v2.1.0)**：`/v1/ws/translate` chunk 流式推送
 *   **🧪 基准自动化 (v2.1.0)**：`scripts/mock_upstream.py` + `scripts/bench_ci.py` 确定性压测，供应链安全扫描入 CI
 *   **🧯 缓存防击穿 (v2.2.0)**：进程内 per-key singleflight + Redis SETNX 跨进程门闩，并发同文本只打一次上游
-*   **☸️ K8s 部署 (v2.3.0)**：`deploy/k8s` 滚动发布 `maxUnavailable=0`、`/ready` 就绪探针、HPA、Ingress、内置 Redis，Dockerfile 优雅停机 30s
+*   **☸️ K8s 部署 (v2.4.0)**：`deploy/k8s` 滚动发布 `maxUnavailable=0`、`/ready` 就绪探针、HPA、Ingress、内置 Redis，Dockerfile 优雅停机 30s；CI 用 kubeconform Schema 校验
 *   **🛡️ 规范化错误处理**：统一状态码与错误响应格式，含健康检查端点
 *   **🔓 完全开源**：代码透明，易于理解和扩展
 

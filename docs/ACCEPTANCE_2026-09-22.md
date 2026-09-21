@@ -123,8 +123,23 @@ Redis / Secret 示例 + Kustomize），并给 Dockerfile/compose 增加优雅停
 | Dockerfile 优雅停机 | ✅ `STOPSIGNAL SIGTERM` + `--timeout-graceful-shutdown 30` |
 | compose 停止宽限 | ✅ `stop_grace_period: 35s` |
 | 进程级 E2E（mock 上游 + 认证, v2.3.0） | ✅ 20/20 全过 |
-| 全量回归 | ✅ 281 passed / 1 skipped，覆盖率 98.88% |
+| 全量回归 | ✅ 282 passed / 1 skipped，覆盖率 98.88% |
 | ruff / format / mypy / docs links | ✅ 全过 |
 
 **说明**: 本机无 `kubectl`，清单以 YAML 解析 + 结构断言验收；有集群时按
 `deploy/k8s/README.md` 执行 `kubectl apply -k deploy/k8s` 后再做滚动发布压测。
+
+## 十、v2.4.0 K8s Schema 校验 (2026-09-22)
+
+**动作**: 在 v2.3.0 清单基础上接入 kubeconform v0.8.0 Schema 校验，并把
+`allowPrivilegeEscalation` 从 Pod 级移到容器级（Pod 级 Schema 不允许该字段）。
+
+**验收结果**:
+
+| 项 | 结果 |
+|---|---|
+| kubeconform v0.8.0 本地实测 | ✅ 8 valid / 0 invalid（9 resources / 8 files，跳过 kustomization） |
+| Deployment securityContext | ✅ Pod 级 `runAsNonRoot` true；容器级 `allowPrivilegeEscalation` false |
+| CI kubeconform 步骤 | ✅ 已加入 `.github/workflows/ci.yml` |
+| 清单结构断言 | ✅ 补齐 Pod/容器 securityContext 与 CI 步骤断言 |
+| 全量回归 | ✅ 281 passed / 1 skipped，覆盖率 98.88% |

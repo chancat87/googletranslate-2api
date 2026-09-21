@@ -1,4 +1,4 @@
-# Kubernetes 部署 (v2.3.0)
+# Kubernetes 部署 (v2.4.0)
 
 提供原生 K8s 清单，用于多副本滚动发布。`kustomization.yaml` 不包含
 `secret.example.yaml`，避免把占位 Secret 直接应用。
@@ -6,9 +6,12 @@
 ## 前置条件
 
 1. 构建并推送应用镜像，然后把 `deployment.yaml` 中的
-   `image: lza6/googletranslate-2api:v2.3.0` 换成实际镜像地址和版本。
+   `image: lza6/googletranslate-2api:v2.4.0` 换成实际镜像地址和版本。
 2. 准备好强随机 `API_MASTER_KEY` 与真实 `GOOGLE_API_KEY`。
 3. 集群已安装 nginx Ingress Controller（或改用对应 IngressClass）。
+
+CI 已含 kubeconform v0.8.0 schema 校验（`-strict`），每次 push 都会验证
+`deploy/k8s` 的 Deployment/Service/HPA/Ingress/Redis/ConfigMap/Secret 结构。
 
 ## 部署
 

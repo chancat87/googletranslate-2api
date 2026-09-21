@@ -44,8 +44,11 @@ def test_deployment_rolling_update_grace_and_probes():
     assert strategy["maxUnavailable"] == "0"
     assert strategy["maxSurge"] == 1
     assert spec["template"]["spec"]["terminationGracePeriodSeconds"] >= 30
+    pod_spec = spec["template"]["spec"]
+    assert pod_spec["securityContext"]["runAsNonRoot"] is True
     container = spec["template"]["spec"]["containers"][0]
-    assert container["image"].endswith(":v2.3.0")
+    assert container["image"].endswith(":v2.4.0")
+    assert container["securityContext"]["allowPrivilegeEscalation"] is False
     assert container["livenessProbe"]["httpGet"]["path"] == "/health"
     assert container["readinessProbe"]["httpGet"]["path"] == "/ready"
     assert container["ports"][0]["containerPort"] == 8000
@@ -97,6 +100,13 @@ def test_compose_stop_grace_period():
     with open(ROOT / "docker-compose.yml", encoding="utf-8") as f:
         compose = yaml.safe_load(f)
     assert compose["services"]["app"]["stop_grace_period"] == "35s"
+
+
+def test_ci_has_kubeconform_schema_validation():
+    text = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert "Kubeconform schema validate" in text
+    assert "kubeconform-linux-amd64.tar.gz" in text
+    assert "-strict -ignore-missing-schemas -summary deploy/k8s" in text
 
 
 @pytest.mark.parametrize(

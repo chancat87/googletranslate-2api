@@ -22,11 +22,12 @@ spec:
       terminationGracePeriodSeconds: 35
       securityContext:
         runAsNonRoot: true
-        allowPrivilegeEscalation: false
       containers:
         - name: app
-          image: lza6/googletranslate-2api:v2.3.0
+          image: lza6/googletranslate-2api:v2.4.0
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
           ports:
             - name: http
               containerPort: 8000

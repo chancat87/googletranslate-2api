@@ -2,6 +2,20 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [2.4.0] - 2026-09-22
+
+### 新增 (K8s Schema 校验收口)
+
+- **kubeconform v0.8.0 接入 CI**：每次 push 用 `-strict -ignore-missing-schemas` 校验 `deploy/k8s`
+- **修复 Deployment securityContext**：`allowPrivilegeEscalation: false` 移到容器级（Pod 级 Schema 不允许该字段），kubeconform 全量校验 `8 valid / 0 invalid`
+- 清单结构回归测试补强：Pod/容器 securityContext 位置、CI 步骤存在性断言
+
+### 验证
+
+- kubeconform v0.8.0 本地实测：`9 resources found in 8 files - Valid: 8, Invalid: 0, Errors: 0, Skipped: 1`
+- 全量回归 **282 passed / 1 skipped，覆盖率 98.88%**；ruff / format / mypy / 文档死链全过
+- 进程级 mock E2E 20/20（见验收文档）
+
 ## [2.3.0] - 2026-09-22
 
 ### 新增 (K8s 部署清单 + 优雅停机)
