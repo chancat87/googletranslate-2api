@@ -474,6 +474,7 @@ googletranslate-2api/
 - [x] Skills 四件套 (v1.5.2, 见 skills/)
 - [x] LOG_LEVEL 可配 + 终端外关闭 ANSI 彩色 + nginx keepalive + APP_WORKERS 可配 (v1.5.3)
 - [x] Redis 共享缓存 + 优雅降级 + compose 内置 Redis + E2E 验收脚本 (v1.6.0)
+- [x] Redis 分布式限流 + SSE 心跳 + trace 集中化 + Prometheus 告警规则 (v1.7.0)
 
 ### 🚀 近期规划 (v1.1)
 - [ ] 真正的实时流式翻译（按句增量推送）

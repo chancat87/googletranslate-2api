@@ -324,11 +324,13 @@ class TestTokenBucket:
         time.sleep(0.15)  # 补充 >=1 令牌
         assert tb.consume() is True
 
-    def test_limiter_key_isolation(self):
+    @pytest.mark.asyncio
+    async def test_limiter_key_isolation(self):
         rl = RateLimiter(capacity=1, per_second=0.0)
-        assert rl.allow("a") is True
-        assert rl.allow("a") is False
-        assert rl.allow("b") is True
+        assert await rl.allow("a") is True
+        assert await rl.allow("a") is False
+        assert await rl.allow("b") is True
+        await rl.aclose()
 
     def test_retry_after_positive_when_exhausted(self):
         tb = TokenBucket(capacity=1, per_second=1.0)
@@ -340,9 +342,11 @@ class TestTokenBucket:
         tb.consume()
         assert tb.retry_after() == 0.0  # 仍有令牌
 
-    def test_limiter_retry_after_unknown_key(self):
+    @pytest.mark.asyncio
+    async def test_limiter_retry_after_unknown_key(self):
         rl = RateLimiter(capacity=1, per_second=1.0)
-        assert rl.retry_after("nope") == 0.0
+        assert await rl.retry_after("nope") == 0.0
+        await rl.aclose()
 
     def test_retry_after_inf_when_no_refill(self):
         import math

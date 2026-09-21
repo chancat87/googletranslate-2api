@@ -2,6 +2,22 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [1.7.0] - 2026-09-22
+
+### 新增 (可观测与运维基础)
+
+- **Redis 分布式限流** (`RATE_LIMIT_BACKEND=redis`)：WATCH/MULTI/EXEC 原子令牌桶，多副本限流一致；Redis 故障自动回退内存并告警
+- **SSE 心跳** (`SSE_HEARTBEAT_INTERVAL`，默认 0=关)：空闲发 `data: {"type":"ping"}`，泵任务队列实现，不打断内层流
+- **链路摘要集中化** (`TRACE_BACKEND=redis`)：多 worker 下 `/v1/traces/{id}` 可查（SET + ZSET 时间序），故障回退内存
+- **Prometheus 告警规则** (`prometheus/alerts.yml`)：403/错误率/Key 切换/限流/失败占比 5 条规则
+
+### 验证
+
+- 全量回归 **224 passed / 1 skipped**；ruff / mypy 0
+- 真实 Key E2E：内存模式 18/18；Redis 限流+trace 死端口降级模式 19/19（429 实测 + 降级告警实测）
+- SSE 心跳实测：流式响应中出现 12 个 ping 且正常结束 `[DONE]`
+- fakeredis 单测覆盖 Redis 令牌桶/隔离/降级、Redis trace 往返/淘汰/最近列表
+
 ## [1.6.1] - 2026-09-22
 
 ### 变更

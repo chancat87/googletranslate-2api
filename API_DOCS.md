@@ -1,6 +1,6 @@
 # googletranslate-2api 对外 API 文档
 
-> 版本: 1.0.0
+> 版本: 1.7.0
 > 将 Google Translate 适配为 OpenAI Chat Completions 兼容接口, 支持全语言互转、流式与非流式响应。
 
 ---
@@ -137,7 +137,7 @@ print(resp.choices[0].message.content)
 ### 3. 健康检查 — `GET /health` / `GET /ready`
 
 ```json
-{"status": "ok", "service": "googletranslate-2api", "version": "1.6.1"}
+{"status": "ok", "service": "googletranslate-2api", "version": "1.7.0"}
 ```
 
 `/ready` 为就绪探针（联动上游熔断状态），可用时返回 `{"status": "ready", "service": "googletranslate-2api"}`。
@@ -306,6 +306,9 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 | `GOOGLE_API_KEYS` | 否 | — | 多上游 Key 池（逗号分隔），403/429/网络自动切换；缺省回退 `GOOGLE_API_KEY` |
 | `KEY_FAILOVER_COOLDOWN_SECONDS` | 否 | 60 | Key 失败冷却秒数 |
 | `TRACE_STORE_MAXLEN` | 否 | 512 | 链路摘要环形缓冲上限 |
+| `TRACE_BACKEND` | 否 | `memory` | 链路摘要后端: `memory` 或 `redis` (v1.7.0) |
+| `TRACE_PREFIX` | 否 | `g2api:trace:` | Redis trace key 前缀 |
+| `SSE_HEARTBEAT_INTERVAL` | 否 | `0` | SSE 心跳间隔秒数, 0=关闭 (v1.7.0) |
 | `CACHE_BACKEND` | 否 | `memory` | 缓存后端: `memory` 或 `redis` (多 worker/副本共享, v1.6.0) |
 | `REDIS_URL` | 否 | `redis://127.0.0.1:6379/0` | Redis 连接串 (仅 `CACHE_BACKEND=redis` 时使用) |
 | `CACHE_PREFIX` | 否 | `g2api:` | Redis key 前缀, 隔离多服务命名空间 |
@@ -314,6 +317,9 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 | `LOG_FORMAT` | 否 | `text` | 日志格式: `text` 或 `json` |
 | `LOG_LEVEL` | 否 | `INFO` | 日志级别: `DEBUG`/`INFO`/`WARNING`/`ERROR`; 高并发生产建议 `WARNING` |
 | `APP_WORKERS` | 否 | `1` | uvicorn worker 数 (Docker/多核部署设置 ≈ CPU 核数; 进程内缓存/限流/trace 不共享) |
+| `RATE_LIMIT_ENABLED` | 否 | `false` | 限流开关 |
+| `RATE_LIMIT_BACKEND` | 否 | `memory` | 限流后端: `memory` 或 `redis` (v1.7.0) |
+| `RATE_LIMIT_REDIS_URL` | 否 | 复用 `REDIS_URL` | Redis 限流连接串 (留空复用) |
 | `API_MASTER_KEY` | 否 | — | 主密钥; `1` 或空表示关闭认证 |
 | `NGINX_PORT` | 否 | `8088` | 对外暴露端口 |
 | `API_REQUEST_TIMEOUT` | 否 | `60` | 上游请求超时 (秒) |

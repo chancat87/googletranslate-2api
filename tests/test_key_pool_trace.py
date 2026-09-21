@@ -102,30 +102,33 @@ class TestKeyPool:
 
 
 class TestTraceStore:
-    def test_put_get(self):
+    @pytest.mark.asyncio
+    async def test_put_get(self):
         s = TraceStore(maxlen=2)
-        s.put("r1", {"a": 1})
-        assert s.get("r1") == {"a": 1}
-        assert s.get("missing") is None
+        await s.put("r1", {"a": 1})
+        assert await s.get("r1") == {"a": 1}
+        assert await s.get("missing") is None
 
-    def test_overflow_evicts_oldest(self):
+    @pytest.mark.asyncio
+    async def test_overflow_evicts_oldest(self):
         s = TraceStore(maxlen=2)
-        s.put("r1", {"n": 1})
-        s.put("r2", {"n": 2})
-        s.put("r3", {"n": 3})
-        assert s.get("r1") is None
-        assert s.get("r2") == {"n": 2}
-        assert s.get("r3") == {"n": 3}
+        await s.put("r1", {"n": 1})
+        await s.put("r2", {"n": 2})
+        await s.put("r3", {"n": 3})
+        assert await s.get("r1") is None
+        assert await s.get("r2") == {"n": 2}
+        assert await s.get("r3") == {"n": 3}
         assert len(s) == 2
 
-    def test_put_updates_moves_to_end(self):
+    @pytest.mark.asyncio
+    async def test_put_updates_moves_to_end(self):
         s = TraceStore(maxlen=2)
-        s.put("r1", {"n": 1})
-        s.put("r2", {"n": 2})
-        s.put("r1", {"n": 11})  # 重放更新, 不淘汰
+        await s.put("r1", {"n": 1})
+        await s.put("r2", {"n": 2})
+        await s.put("r1", {"n": 11})  # 重放更新, 不淘汰
         assert len(s) == 2
-        assert s.get("r1") == {"n": 11}
-        assert s.get("r2") == {"n": 2}
+        assert await s.get("r1") == {"n": 11}
+        assert await s.get("r2") == {"n": 2}
 
 
 class TestFormatTraceSummary:
@@ -395,7 +398,7 @@ class TestTraceIntegration:
         assert tid and tid.startswith("chatcmpl-")
         body = b"".join([chunk async for chunk in resp.body_iterator])
         assert b"[DONE]" in body
-        rec = p.trace_store.get(tid)
+        rec = await p.trace_store.get(tid)
         assert rec is not None
         assert rec["result"] == "success"
         assert rec["upstream_status"] == 200
@@ -419,7 +422,9 @@ class TestTraceIntegration:
         monkeypatch.setenv("API_MASTER_KEY", "1")  # 关闭认证
         import main as m
 
-        m.provider.trace_store.put("trace-abc", {"request_id": "trace-abc", "result": "success"})
+        await m.provider.trace_store.put(
+            "trace-abc", {"request_id": "trace-abc", "result": "success"}
+        )
         from httpx import ASGITransport, AsyncClient
 
         transport = ASGITransport(app=m.app)

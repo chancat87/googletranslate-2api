@@ -227,14 +227,16 @@ class TestReviewSecurityFixes:
         body = b"".join(chunks).decode("utf-8")
         assert "API Key" in body
 
-    def test_rate_limiter_bounded_eviction(self):
+    @pytest.mark.asyncio
+    async def test_rate_limiter_bounded_eviction(self):
         """P2-2: 限流桶有界, 超出 max_keys 淘汰最旧。"""
         rl = RateLimiter(capacity=1, per_second=0.001, max_keys=2)
-        assert rl.allow("a") is True
-        assert rl.allow("b") is True
-        assert rl.allow("c") is True  # 触发淘汰 a
-        assert rl.allow("a") is True  # a 被淘汰后重新建桶
-        assert len(rl._buckets) == 2  # 内存有界
+        assert await rl.allow("a") is True
+        assert await rl.allow("b") is True
+        assert await rl.allow("c") is True  # 触发淘汰 a
+        assert await rl.allow("a") is True  # a 被淘汰后重新建桶
+        assert len(rl._memory._buckets) == 2  # 内存有界
+        await rl.aclose()
 
     @pytest.mark.asyncio
     async def test_xff_dimension_when_trusted(self, client, monkeypatch):

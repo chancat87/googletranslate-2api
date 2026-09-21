@@ -13,6 +13,7 @@
 """
 
 import asyncio
+import contextlib
 import random
 import re
 import time
@@ -76,11 +77,18 @@ class GoogleTranslateProvider(BaseProvider):
         self.client: httpx.AsyncClient | None = None
         self.cache = make_cache()
         self.redis_cache: RedisCacheBackend | None = None
+        self.upstream_url = settings.UPSTREAM_BASE_URL.rstrip("/") + "/v1/translateHtml"
         self.circuit_breaker: CircuitBreaker | None = None
         # 阶段 1.1: 多 Key 池 (initialize 时创建; _translate 惰性兜底)
         self.key_pool: KeyPool | None = None
         # 阶段 1.2: 链路摘要环形缓冲 (只存元数据, 不含原文与明文 Key)
-        self.trace_store = TraceStore(settings.TRACE_STORE_MAXLEN)
+        self.trace_store = TraceStore(
+            maxlen=settings.TRACE_STORE_MAXLEN,
+            backend=settings.TRACE_BACKEND,
+            redis_url=settings.REDIS_URL,
+            prefix=settings.TRACE_PREFIX,
+            ttl=settings.TRACE_TTL,
+        )
         if settings.CIRCUIT_BREAKER_ENABLED:
             self.circuit_breaker = CircuitBreaker(
                 failure_threshold=settings.CIRCUIT_FAILURE_THRESHOLD,
@@ -123,6 +131,7 @@ class GoogleTranslateProvider(BaseProvider):
         if self.redis_cache is not None:
             await self.redis_cache.aclose()
             self.redis_cache = None
+        await self.trace_store.aclose()
         if self.client:
             await self.client.aclose()
 
@@ -189,7 +198,7 @@ class GoogleTranslateProvider(BaseProvider):
         try:
             markdown_text = await self._translate(text, source_lang, target_lang, trace=trace)
             completion = create_chat_completion(request_id, model_name, markdown_text, text)
-            self._store_trace(trace, started, "success")
+            await self._store_trace(trace, started, "success")
             response = JSONResponse(content=completion)
             response.headers["X-Trace-Summary"] = format_trace_summary(trace)
             return response
@@ -197,7 +206,7 @@ class GoogleTranslateProvider(BaseProvider):
             if exc.response.status_code == 403:
                 # P2-4: 403 是永久性凭证错误, 用独立语义暴露, 便于监控区分
                 logger.error("上游返回 403: GOOGLE_API_KEY 无效或已失效")
-                self._store_trace(trace, started, "error", error="upstream_auth_error")
+                await self._store_trace(trace, started, "error", error="upstream_auth_error")
                 return JSONResponse(
                     status_code=502,
                     content={
@@ -209,7 +218,7 @@ class GoogleTranslateProvider(BaseProvider):
                     headers={"X-Trace-Summary": format_trace_summary(trace)},
                 )
             logger.error(f"上游返回非 200 (src={source_lang} tgt={target_lang})")
-            self._store_trace(trace, started, "error", error="upstream_error")
+            await self._store_trace(trace, started, "error", error="upstream_error")
             return JSONResponse(
                 status_code=502,
                 content={"error": {"message": "翻译服务暂时不可用", "type": "upstream_error"}},
@@ -217,18 +226,18 @@ class GoogleTranslateProvider(BaseProvider):
             )
         except _TRANSPORT_ERRORS:
             logger.error(f"上游网络错误 (src={source_lang} tgt={target_lang})")
-            self._store_trace(trace, started, "error", error="upstream_network")
+            await self._store_trace(trace, started, "error", error="upstream_network")
             return JSONResponse(
                 status_code=502,
                 content={"error": {"message": "翻译服务网络异常", "type": "upstream_error"}},
                 headers={"X-Trace-Summary": format_trace_summary(trace)},
             )
         except HTTPException:
-            self._store_trace(trace, started, "error", error="http_exception")
+            await self._store_trace(trace, started, "error", error="http_exception")
             raise
         except Exception:
             logger.exception("处理翻译请求时发生错误")
-            self._store_trace(trace, started, "error", error="internal_error")
+            await self._store_trace(trace, started, "error", error="internal_error")
             return JSONResponse(
                 status_code=500,
                 content={"error": {"message": "内部服务器错误", "type": "internal_error"}},
@@ -248,7 +257,7 @@ class GoogleTranslateProvider(BaseProvider):
         trace = self._new_trace(request_id)
         started = time.perf_counter()
 
-        async def stream_generator() -> AsyncGenerator[bytes, None]:
+        async def _inner_generator() -> AsyncGenerator[bytes, None]:
             try:
                 chunks_to_send = await self._stream_translate(
                     text, source_lang, target_lang, trace=trace
@@ -264,16 +273,16 @@ class GoogleTranslateProvider(BaseProvider):
                         create_chat_completion_usage_chunk(request_id, model_name, text, joined)
                     )
                 yield DONE_CHUNK
-                self._store_trace(trace, started, "success")
+                await self._store_trace(trace, started, "success")
             except httpx.HTTPStatusError as exc:
                 if exc.response.status_code == 403:
                     logger.error("上游返回 403: GOOGLE_API_KEY 无效或已失效")
                     err_text = "上游 API Key 无效或已失效"
-                    self._store_trace(trace, started, "error", error="upstream_auth_error")
+                    await self._store_trace(trace, started, "error", error="upstream_auth_error")
                 else:
                     logger.error(f"上游返回非 200 (src={source_lang} tgt={target_lang})")
                     err_text = "翻译服务暂时不可用"
-                    self._store_trace(trace, started, "error", error="upstream_error")
+                    await self._store_trace(trace, started, "error", error="upstream_error")
                 error_chunk = create_chat_completion_chunk(request_id, model_name, err_text, "stop")
                 yield create_sse_data(error_chunk)
                 yield DONE_CHUNK
@@ -285,7 +294,7 @@ class GoogleTranslateProvider(BaseProvider):
                 error_chunk = create_chat_completion_chunk(request_id, model_name, detail, "stop")
                 yield create_sse_data(error_chunk)
                 yield DONE_CHUNK
-                self._store_trace(trace, started, "error", error="http_exception")
+                await self._store_trace(trace, started, "error", error="http_exception")
             except _TRANSPORT_ERRORS:
                 logger.error(f"上游网络错误 (src={source_lang} tgt={target_lang})")
                 error_chunk = create_chat_completion_chunk(
@@ -293,7 +302,7 @@ class GoogleTranslateProvider(BaseProvider):
                 )
                 yield create_sse_data(error_chunk)
                 yield DONE_CHUNK
-                self._store_trace(trace, started, "error", error="upstream_network")
+                await self._store_trace(trace, started, "error", error="upstream_network")
             except Exception:
                 logger.exception("处理翻译请求时发生错误")
                 error_chunk = create_chat_completion_chunk(
@@ -301,15 +310,64 @@ class GoogleTranslateProvider(BaseProvider):
                 )
                 yield create_sse_data(error_chunk)
                 yield DONE_CHUNK
-                self._store_trace(trace, started, "error", error="internal_error")
+                await self._store_trace(trace, started, "error", error="internal_error")
             finally:
                 # M10: 流结束 / 客户端断开 (GeneratorExit/CancelledError 走 BaseException,
                 # 不会被子类 except Exception 吞掉) 时, 在此释放上下文并留日志。
                 logger.debug(f"stream closed (request_id={request_id})")
 
+        async def stream_generator() -> AsyncGenerator[bytes, None]:
+            async for chunk in self._with_heartbeat(
+                _inner_generator(), settings.SSE_HEARTBEAT_INTERVAL
+            ):
+                yield chunk
+
         response = StreamingResponse(stream_generator(), media_type="text/event-stream")
         response.headers["X-Trace-Id"] = request_id
         return response
+
+    @staticmethod
+    async def _with_heartbeat(
+        inner: AsyncGenerator[bytes, None], interval: float
+    ) -> AsyncGenerator[bytes, None]:
+        """v1.7.0: SSE 心跳包装; interval<=0 时原样透传。
+
+        用独立泵任务喂队列, 超时才发 ping, 避免 wait_for 取消内层生成器丢内容。
+        """
+        if interval <= 0:
+            async for chunk in inner:
+                yield chunk
+            return
+        queue: asyncio.Queue = asyncio.Queue()
+        sentinel = object()
+
+        async def pump() -> None:
+            try:
+                async for chunk in inner:
+                    await queue.put(chunk)
+            except asyncio.CancelledError:
+                raise
+            except BaseException:
+                pass
+            finally:
+                await queue.put(sentinel)
+
+        task = asyncio.create_task(pump())
+        try:
+            while True:
+                try:
+                    item = await asyncio.wait_for(queue.get(), timeout=interval)
+                except asyncio.TimeoutError:
+                    yield b'data: {"type":"ping"}\n\n'
+                    continue
+                if item is sentinel:
+                    break
+                yield item
+        finally:
+            if not task.done():
+                task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await task
 
     @staticmethod
     def _get_include_usage(request_data: dict[str, Any]) -> bool:
@@ -527,7 +585,7 @@ class GoogleTranslateProvider(BaseProvider):
                 logger.warning(f"上游重试第 {n + 1}/{attempts} 次, 退避 {backoff:.2f}s")
                 await asyncio.sleep(backoff)
             try:
-                resp = await self.client.post(self.BASE_URL, headers=headers, json=payload)
+                resp = await self.client.post(self.upstream_url, headers=headers, json=payload)
             except _TRANSPORT_ERRORS:
                 if trace is not None:
                     trace["retries"] = retries
@@ -611,7 +669,7 @@ class GoogleTranslateProvider(BaseProvider):
             "created_at": time.time(),
         }
 
-    def _store_trace(
+    async def _store_trace(
         self,
         trace: dict[str, Any],
         started: float,
@@ -623,7 +681,7 @@ class GoogleTranslateProvider(BaseProvider):
         if error is not None:
             trace["error"] = error
         trace["duration_ms"] = int((time.perf_counter() - started) * 1000)
-        self.trace_store.put(trace["request_id"], trace)
+        await self.trace_store.put(trace["request_id"], trace)
 
     def _sync_key_pool_metrics(self) -> None:
         """阶段 2.1: 各 Key 可用/冷却状态同步到 /metrics (只暴露摘要)。"""

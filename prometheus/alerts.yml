@@ -1,0 +1,53 @@
+# googletranslate-2api Prometheus 告警规则 (v1.7.0)
+# 配套指标: /metrics (translate_* / rate_limited_total / cache_*)
+groups:
+  - name: googletranslate-2api
+    rules:
+      - alert: UpstreamAuthError
+        expr: rate(translate_upstream_errors_total{code="403"}[5m]) > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: 上游 API Key 无效或已失效
+          description: GOOGLE_API_KEY / GOOGLE_API_KEYS 持续返回 403, 需要轮换密钥。
+
+      - alert: UpstreamErrorRateHigh
+        expr: rate(translate_upstream_errors_total[5m]) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 上游错误率过高
+          description: 5 分钟平均上游错误超过 0.5 次/秒, 检查 429/5xx 与网络。
+
+      - alert: KeyPoolSwitchingFrequently
+        expr: rate(translate_key_switches_total[5m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 上游 Key 频繁切换
+          description: 多 Key 池 5 分钟平均切换超过 5 次/秒, 可能有 Key 失效或被限流。
+
+      - alert: RequestRateLimited
+        expr: rate(rate_limited_total[5m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 应用限流触发频繁
+          description: 5 分钟平均 429 超过 5 次/秒, 可能需要扩容或调整限流参数。
+
+      - alert: TranslationFailureRatioHigh
+        expr: >
+          sum(rate(translate_upstream_errors_by_key_hash_total[5m])) by (key)
+          /
+          clamp_min(sum(rate(translate_requests_by_key_hash_total[5m])) by (key), 1)
+          > 0.2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 单 Key 失败比例过高
+          description: 某个上游 Key 的 5 分钟失败比例超过 20%。

@@ -46,7 +46,10 @@ provider = GoogleTranslateProvider()
 
 # --- M6 限流器 (默认关; 进程内令牌桶, 多副本需网关层兜底) ---
 rate_limiter = RateLimiter(
-    settings.RATE_LIMIT_CAPACITY, settings.RATE_LIMIT_PER_SECOND, settings.RATE_LIMIT_MAX_KEYS
+    settings.RATE_LIMIT_CAPACITY,
+    settings.RATE_LIMIT_PER_SECOND,
+    settings.RATE_LIMIT_MAX_KEYS,
+    backend=settings.RATE_LIMIT_BACKEND,
 )
 RATE_LIMIT_SKIP_PATHS = {
     "/",
@@ -111,6 +114,7 @@ async def lifespan(app: FastAPI):
         raise
     yield
     await provider.close()
+    await rate_limiter.aclose()
     logger.info("应用关闭。")
 
 
@@ -162,10 +166,10 @@ async def rate_limit_middleware(request: Request, call_next):
         key = f"ip:{client_ip}"
         key_type = "ip"
 
-    if not rate_limiter.allow(key):
+    if not await rate_limiter.allow(key):
         metrics.rate_limited.labels(key_type=key_type).inc()
         logger.warning(f"rate limited ({key_type}) path={request.url.path}")
-        wait = rate_limiter.retry_after(key)
+        wait = await rate_limiter.retry_after(key)
         retry_after = max(1, math.ceil(wait)) if math.isfinite(wait) else 1
         return JSONResponse(
             status_code=429,
@@ -347,7 +351,7 @@ async def list_models():
 )
 async def get_trace(request_id: str):
     """阶段 1.2: 返回链路摘要记录 (进程内环形缓冲, 上限 TRACE_STORE_MAXLEN)。"""
-    record = provider.trace_store.get(request_id)
+    record = await provider.trace_store.get(request_id)
     if record is None:
         raise HTTPException(status_code=404, detail="未找到该请求的链路摘要。")
     return record

@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     )
 
     APP_NAME: str = "googletranslate-2api"
-    APP_VERSION: str = "1.6.1"
+    APP_VERSION: str = "1.7.0"
     DESCRIPTION: str = "一个将 Google Translate API 转换为兼容 OpenAI 格式的代理。"
 
     API_MASTER_KEY: str | None = None
@@ -30,8 +30,14 @@ class Settings(BaseSettings):
     KEY_FAILOVER_COOLDOWN_SECONDS: int = 60
     # 阶段 1.2: 链路摘要环形缓冲上限
     TRACE_STORE_MAXLEN: int = 512
+    # v1.7.0: 链路摘要后端 memory | redis (多 worker 集中可查; redis 故障回退内存)
+    TRACE_BACKEND: str = "memory"
+    TRACE_PREFIX: str = "g2api:trace:"
+    TRACE_TTL: int = 3600
 
     API_REQUEST_TIMEOUT: int = 60
+    # v2.1.0: 上游基址可覆盖 (压测/本地 mock; 默认 Google translate-pa)
+    UPSTREAM_BASE_URL: str = "https://translate-pa.googleapis.com"
 
     DEFAULT_MODEL: str = "google-translate"
     KNOWN_MODELS: list[str] = ["google-translate"]
@@ -42,6 +48,8 @@ class Settings(BaseSettings):
     STREAM_CHUNK_ENABLED: bool = False
     STREAM_CHUNK_THRESHOLD: int = 500
     STREAM_CHUNK_MAX: int = 500
+    # v1.7.0: SSE 心跳间隔秒数, 0=关闭 (防止慢连接被网关/中间件掐断)
+    SSE_HEARTBEAT_INTERVAL: float = 0.0
 
     # --- P1.2 缓存: 内存 TTL-LRU / Redis 共享缓存 (v1.6.0) ---
     CACHE_ENABLED: bool = True
@@ -90,6 +98,11 @@ class Settings(BaseSettings):
     RATE_LIMIT_CAPACITY: int = 30
     RATE_LIMIT_PER_SECOND: float = 10.0
     RATE_LIMIT_MAX_KEYS: int = 10000  # 限流桶上限, 防无界内存增长 (P2-2)
+    # v1.7.0: 限流后端 memory | redis (多副本一致; redis 故障回退内存)
+    RATE_LIMIT_BACKEND: str = "memory"
+    RATE_LIMIT_REDIS_URL: str = ""
+    RATE_LIMIT_PREFIX: str = "g2api:rl:"
+    RATE_LIMIT_TTL: int = 3600
     # 可信反代后取 X-Forwarded-For 首跳做 IP 维度 (P2-3); 默认关, 防伪造
     TRUST_PROXY_HEADER: bool = False
 
