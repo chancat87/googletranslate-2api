@@ -40,6 +40,7 @@
 *   **☸️ K8s 部署 (v2.4.0)**：`deploy/k8s` 滚动发布 `maxUnavailable=0`、`/ready` 就绪探针、HPA、Ingress、内置 Redis，Dockerfile 优雅停机 30s；CI 用 kubeconform Schema 校验
 *   **🚀 响应压缩 (v2.6.0)**：Nginx gzip 压缩 JSON/文本/JS/CSS，SSE 流式不压缩不缓冲
 *   **📥 批量 Key 导入 (v2.7.0)**：`POST /v1/admin/keys/bulk` + Web UI 批量粘贴，N 条真实 Key 一次进池
+*   **🗂️ 文件批量加载 (v2.8.0)**：`GOOGLE_API_KEYS_FILE` 启动时自动读入每行一个 Key
 *   **🛡️ 规范化错误处理**：统一状态码与错误响应格式，含健康检查端点
 *   **🔓 完全开源**：代码透明，易于理解和扩展
 
@@ -113,6 +114,9 @@ graph TB
    
    # 谷歌翻译 API Key（必需）
    GOOGLE_API_KEY=你的谷歌API密钥
+   
+   # 可选：从文件批量加载多个 Key（每行一个）
+   # GOOGLE_API_KEYS_FILE=/path/to/keys.txt
    ```
 
 3. **获取谷歌 API Key**

@@ -2,6 +2,18 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [2.8.0] - 2026-09-22
+
+### 新增 (文件批量加载 Key)
+
+- `GOOGLE_API_KEYS_FILE`：启动时自动读取本地文件（每行一个，`#` 注释），并入 Key 池
+- 与 `GOOGLE_API_KEYS`/`GOOGLE_API_KEY` 合并去重，缺失文件回退到既有关键来源
+
+### 验证
+
+- 新增 3 项 Key 文件加载测试：env+file 合并去重、仅文件、缺失文件回退单 Key
+- 全量回归 **297 passed / 1 skipped，覆盖率 98.91%**；ruff / format / mypy / docs links 全过
+
 ## [2.7.0] - 2026-09-22
 
 ### 新增 (批量 Key 导入)

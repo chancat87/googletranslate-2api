@@ -20,6 +20,7 @@ import time
 import uuid
 from collections import OrderedDict
 from collections.abc import AsyncGenerator
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -200,13 +201,34 @@ class GoogleTranslateProvider(BaseProvider):
             self.circuit_breaker.record_success()
 
     def _effective_keys(self) -> list[str]:
-        """解析 GOOGLE_API_KEYS (逗号分隔池); 未设置时回退 GOOGLE_API_KEY (向后兼容)。"""
+        """解析 GOOGLE_API_KEYS + GOOGLE_API_KEYS_FILE; 未设置时回退 GOOGLE_API_KEY。"""
+        keys: list[str] = []
+
+        def _add(key: str) -> None:
+            key = key.strip()
+            if key and key not in keys:
+                keys.append(key)
+
         pool_raw = (settings.GOOGLE_API_KEYS or "").strip()
         if pool_raw:
-            keys = [k.strip() for k in pool_raw.split(",") if k.strip()]
-            if keys:
-                return keys
-        # 池为空/只含分隔符时回退单 Key (向后兼容)
+            for item in pool_raw.split(","):
+                _add(item)
+        key_file = (settings.GOOGLE_API_KEYS_FILE or "").strip()
+        if key_file:
+            path = Path(key_file)
+            if path.exists():
+                try:
+                    for line in path.read_text(encoding="utf-8").splitlines():
+                        if not line.strip() or line.lstrip().startswith("#"):
+                            continue
+                        _add(line)
+                except OSError as exc:
+                    logger.warning(f"GOOGLE_API_KEYS_FILE 读取失败: {exc}")
+            else:
+                logger.warning(f"GOOGLE_API_KEYS_FILE 不存在: {key_file}")
+        if keys:
+            return keys
+        # 池为空时回退单 Key (向后兼容)
         single = (settings.GOOGLE_API_KEY or "").strip()
         return [single] if single else []
 

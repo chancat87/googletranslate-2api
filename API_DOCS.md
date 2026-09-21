@@ -137,7 +137,7 @@ print(resp.choices[0].message.content)
 ### 3. 健康检查 — `GET /health` / `GET /ready`
 
 ```json
-{"status": "ok", "service": "googletranslate-2api", "version": "2.7.0"}
+{"status": "ok", "service": "googletranslate-2api", "version": "2.8.0"}
 ```
 
 `/ready` 为就绪探针（联动上游熔断状态），可用时返回 `{"status": "ready", "service": "googletranslate-2api"}`。
@@ -337,6 +337,7 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 |------|------|------|------|
 | `GOOGLE_API_KEY` | 是* | — | Google Translate API 密钥（*设置 `GOOGLE_API_KEYS` 后可省略） |
 | `GOOGLE_API_KEYS` | 否 | — | 多上游 Key 池（逗号分隔），403/429/网络自动切换；缺省回退 `GOOGLE_API_KEY` |
+| `GOOGLE_API_KEYS_FILE` | 否 | — | 从本地文件批量加载 Key（每行一个，`#` 注释），启动时自动并入 Key 池 (v2.8.0) |
 | `KEY_FAILOVER_COOLDOWN_SECONDS` | 否 | 60 | Key 失败冷却秒数 |
 | `TRACE_STORE_MAXLEN` | 否 | 512 | 链路摘要环形缓冲上限 |
 | `TRACE_BACKEND` | 否 | `memory` | 链路摘要后端: `memory` 或 `redis` (v1.7.0) |

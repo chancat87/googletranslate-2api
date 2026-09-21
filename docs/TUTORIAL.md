@@ -75,6 +75,9 @@ curl -X POST http://127.0.0.1:8088/v1/translate/detect \
 
 `.env` 配 `GOOGLE_API_KEYS="k1,k2,k3"`，403/429/网络错误自动切换，失败 Key 冷却 60s。
 
+Key 数量很多时，可以写到一个文件（每行一个，`#` 开头为注释），在 `.env` 设置
+`GOOGLE_API_KEYS_FILE=/path/to/keys.txt`，启动时自动并入 Key 池。
+
 ### 共享缓存
 
 ```dotenv

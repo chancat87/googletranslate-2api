@@ -200,3 +200,14 @@ Redis / Secret 示例 + Kustomize），并给 Dockerfile/compose 增加优雅停
 | Web UI 批量导入 | ✅ Keys 页“批量导入”折叠面板 |
 | Playwright 浏览器 E2E | ✅ 含批量导入步骤，PASS |
 | 全量回归 | ✅ 293 passed / 1 skipped，覆盖率 98.90% |
+
+## 十五、v2.8.0 文件批量加载 Key (2026-09-22)
+
+**交付**: `GOOGLE_API_KEYS_FILE` 启动时自动读取本地 Key 文件，与 env Key 合并去重。
+
+| 项 | 结果 |
+|---|---|
+| env + file 合并去重 | ✅ 3 项测试 |
+| 仅文件加载 | ✅ 测试通过 |
+| 文件缺失回退 | ✅ 回退 `GOOGLE_API_KEY` |
+| 全量回归 | ✅ 297 passed / 1 skipped，覆盖率 98.91% |
