@@ -291,8 +291,14 @@ class GoogleTranslateProvider(BaseProvider):
         return markdown_text
 
     def _record_upstream_failure(self, code: str) -> None:
-        """记录上游失败: 指标 + 熔断计数 (仅 429/5xx/transport 计入熔断)。"""
+        """记录上游失败: 指标 + 告警日志 + 熔断计数 (仅 429/5xx/transport 计入熔断)。"""
         metrics.upstream_errors.labels(code=code).inc()
+        if code == "403":
+            logger.error("上游返回 403: GOOGLE_API_KEY 无效或已失效, 请检查并轮换 key")
+        elif code == "429":
+            logger.warning("上游返回 429: 触发 Google 频率限制, 已进入退避重试")
+        elif code == "transport":
+            logger.error("上游网络错误 (连接/超时)")
         if self.circuit_breaker is None:
             return
         if code == "transport" or code in ("429", "500", "502", "503", "504"):

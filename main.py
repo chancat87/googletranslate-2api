@@ -54,8 +54,28 @@ RATE_LIMIT_SKIP_PATHS = {
 }
 
 
+_WEAK_MASTER_KEY_MARKERS = ("default-key", "changeme", "please-change")
+
+
+def _check_weak_api_key() -> None:
+    """3.B.2 启动安全告警: 认证关闭 / 弱 key / 示例默认 key 时打 warning。"""
+    master = settings.API_MASTER_KEY
+    if not master or master == "1":
+        logger.warning(
+            "API_MASTER_KEY 未设置或为 '1', 认证已关闭 (仅限本地调试, 生产必须设置强随机 key)"
+        )
+        return
+    weak = len(master) < 16 or any(m in master.lower() for m in _WEAK_MASTER_KEY_MARKERS)
+    if weak:
+        logger.warning(
+            f"API_MASTER_KEY 过弱或为示例默认值 (长度 {len(master)}), "
+            "生产环境请设置 >=16 字符的强随机 key"
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _check_weak_api_key()
     logger.info(f"应用启动中... {settings.APP_NAME} v{settings.APP_VERSION}")
     try:
         await provider.initialize()
