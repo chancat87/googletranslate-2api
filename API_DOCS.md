@@ -259,7 +259,7 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 
 ### 新错误码
 - `422`：请求体校验失败（含 Pydantic 校验），统一信封 `{error:{message,type,detail}}`
-- `429`：触发限流（`RATE_LIMIT_ENABLED=true` 时）+ `Retry-After`
+- `429`：触发限流（`RATE_LIMIT_ENABLED=true` 时）+ `Retry-After`（**实际等待秒数**，按令牌桶回填计算；若在 nginx 层启用 `limit_req`，请加 `limit_req_status 429;` 保持语义一致）
 - `503`：熔断打开 / 上游不可用（/ready 与 chat/completions 均可能）
 
 ### 流式兼容增强

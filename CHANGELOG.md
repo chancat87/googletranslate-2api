@@ -2,6 +2,15 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [1.4.2] - 2026-09-21
+
+### 文档与验收
+- 文档同步到 v1.4.x：README 增补 v1.4.x 更新记录；CLAUDE/API_DOCS 补充 3.B/3.C/3.D 特性与 Retry-After 语义
+- 真实服务器级 E2E 审计（有效 key + 限流开启）：/ready 200、非流式/流式/批量真实翻译、include_usage、**429 Retry-After=实际秒数(998)** 全部验证通过
+- 远端 GitHub Actions CI v1.4.1 main/tag 双 success
+
+### 验证
+- 全量回归 168 passed / 1 skipped，覆盖率 100%（767 stmts）；ruff / mypy / format 0
 ## [1.4.1] - 2026-09-21
 
 ### 增强 (3.D / 3.E 验收补齐)

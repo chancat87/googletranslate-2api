@@ -596,3 +596,27 @@ stop.ps1          :: 停止监听 8088 的服务
 
 ### ⚠️ 安全提醒（重要）
 历史 git 提交（`f229883` / `a35417e` / `834501e`）中曾包含真实 `GOOGLE_API_KEY`，该 key 当前已被 Google 吊销（返回 `API_KEY_INVALID`）。**请及时在谷歌侧轮换 key**；若需彻底清除历史，可评估 `git filter-repo`（破坏性操作，务必备份并明确确认，严禁 `--force` 覆盖）。
+
+---
+
+## v1.4.x 更新记录 (2026-09-21)
+
+### 安全 (3.B 加固)
+- `API_MASTER_KEY` 命中公开示例/弱 key 标记默认**拒绝启动**（`ALLOW_WEAK_API_KEY=true` 才显式放行）
+- 主密钥字符多样性 <6 时启动 WARNING（熵检查）；多 key + `hmac.compare_digest` 常量时间比较
+- 限流桶有界（`RATE_LIMIT_MAX_KEYS` + LRU 淘汰）；`TRUST_PROXY_HEADER=true` 时按 `X-Forwarded-For` 首跳限流
+- 上游 403 → `upstream_auth_error` 独立语义；流式 SSE detail 白名单（非白名单输出通用文案）
+
+### 缓存 (3.C)
+- 缓存 key 使用 sha256 摘要（跨进程稳定）；**首尾空白归一化**：`" hello "` 与 `"hello"` 共享缓存命中
+- 命中/未命中指标：`cache_hit_total` / `cache_miss_total`（`/metrics`）
+
+### 可靠性与限流 (3.D / P3-8)
+- 显式 `httpx.Limits` 连接池（与 `BATCH_MAX_CONCURRENCY` 匹配）
+- 上游重试日志含次数与退避；批量整体 deadline（超时条目 `error=timeout`）
+- **429 的 `Retry-After` 为按令牌桶回填计算的实际秒数**（不再固定 1）
+
+### 质量基线
+- 测试 **168 passed / 1 skipped**，覆盖率 **100%**（767 stmts）
+- ruff check / format 0，mypy 0；pre-commit 全绿；远端 GitHub Actions CI 全 success
+- 发行版：v1.4.1（Latest）→ v1.2.0 共 8 个

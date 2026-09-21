@@ -76,6 +76,12 @@ googletranslate-2api/
 
 ## 关键技术约定
 
+### 当前版本 (v1.4.x)
+
+- 3.B 安全加固：弱 key 拒绝启动/熵检查、有界限流、可信 XFF、403 语义、SSE detail 白名单
+- 3.C 缓存：sha256 key + 首尾空白归一化；3.D 连接池显式限制 + 重试日志
+- P3-8：429 `Retry-After` 按令牌桶计算实际秒数
+
 ### 翻译流程
 
 1. 取 `messages[-1].content` 作为待翻译文本
