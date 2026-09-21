@@ -246,3 +246,27 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 - ⚠️ `usage` 为占位 `-1`, 不计费
 
 翻译扩展字段 (`source_lang` / `target_lang`) 非 OpenAI 标准, 通过 `extra_body` 传递。
+
+
+---
+
+## v1.2.0 补充（2026-09-21）
+
+### 新端点
+- `POST /v1/translate/detect` — 轻量语言检测（脚本推断，`source=script_heuristic`）
+- `GET /metrics` — Prometheus 指标（运维用，建议网关层做访问控制）
+
+### 新错误码
+- `422`：请求体校验失败（含 Pydantic 校验），统一信封 `{error:{message,type,detail}}`
+- `429`：触发限流（`RATE_LIMIT_ENABLED=true` 时）+ `Retry-After`
+- `503`：熔断打开 / 上游不可用（/ready 与 chat/completions 均可能）
+
+### 流式兼容增强
+- 请求携带 `stream_options: {"include_usage": true}` 时，流末尾追加一个 `choices: []` + `usage` 的 `chat.completion.chunk`
+- `model` 支持 `MODEL_ALIASES` 映射（如 `gpt-3.5-turbo` → `google-translate`）
+- 批量响应条目新增可选 `error` 字段（`timeout` / `upstream_<code>` / `upstream_network`），向后兼容
+
+### 行为增强
+- 上游重试（指数退避 + 抖动，仅网络异常/429/5xx；4xx 不重试）
+- 熔断：连续失败快速失败，/ready 联动
+- 批量整体 deadline：`BATCH_DEADLINE_SECONDS`，超时条目标记 `error=timeout`

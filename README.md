@@ -546,3 +546,53 @@ uvicorn main:app --reload --port 8088
 **让翻译变得简单，让世界没有语言障碍！** 🌍✨
 
 ---
+
+
+---
+
+## 📦 v1.2.0 更新记录（2026-09-21）
+
+> 本轮为完整优化落地（详见 `计划文档/下一步改进指南.md` 与 `计划文档/项目规格.md`）。
+
+### 新增端点
+- `POST /v1/translate/detect` — 轻量语言检测（基于字符集的脚本推断，`source=script_heuristic`，**非 Google 官方检测**）
+- `GET /metrics` — Prometheus 指标（`translate_requests_total` / `cache_hit_total` / `cache_miss_total` / `translate_upstream_errors_total` / `rate_limited_total` 等）
+
+### 新增 / 增强能力
+- **上游重试**：网络异常 / 429 / 5xx 自动重试（指数退避 + 抖动），4xx 不重试
+- **熔断器**：滑动窗口，上游持续故障时快速失败（503），`/ready` 联动
+- **批量整体 deadline**：`BATCH_DEADLINE_SECONDS`，超时条目标记 `error=timeout`，条目新增 `error` 字段（向后兼容）
+- **限流**：IP + 认证 key 双维度令牌桶，429 + `Retry-After`（**默认关闭**，`RATE_LIMIT_ENABLED=true` 开启）
+- **422 统一错误信封**：所有错误统一 `{error: {message, type, detail}}`
+- **`stream_options.include_usage`**：流式请求可获末尾 `usage` 块（OpenAI SDK 兼容）
+- **模型别名 `MODEL_ALIASES`**：客户端硬编码模型名（如 `gpt-3.5-turbo`）可映射到 `google-translate`
+- **流式取消/关闭释放**：客户端断开即中止，不浪费上游
+- **缓存 key 稳定化**：改用 sha256 摘要，跨进程/重启后依然可命中
+- **段落优先切分**：长文本渐进流按段落切分（默认关，单段落回退按句）
+
+### 配置新增（详见 `.env.example` 或 `app/core/config.py`）
+`UPSTREAM_RETRY_*`、`CIRCUIT_BREAKER_ENABLED/FAILURE_THRESHOLD/WINDOW_SECONDS/OPEN_SECONDS`、`BATCH_DEADLINE_SECONDS`、`RATE_LIMIT_ENABLED/CAPACITY/PER_SECOND`、`METRICS_ENABLED`、`MODEL_ALIASES`。
+
+### 错误码补充
+| 状态码 | 含义 |
+|--------|------|
+| `422` | 请求体校验失败（统一信封） |
+| `429` | 触发限流（默认关） |
+| `503` | 熔断打开 / 上游不可用 |
+
+### 工程质量
+- 测试 **141 passed / 1 skipped**（真实集成默认 skip；测试已密封，无需 `.env`）
+- 覆盖率 **100%**（`app` + `main.py`），`pyproject.toml` 门禁 `fail_under=97`
+- `ruff check` 0 错误、`ruff format` 0 差异、`mypy` 0 错误
+- 新增 `pyproject.toml`（ruff / mypy / coverage 配置）、`.github/workflows/ci.yml`、`.pre-commit-config.yaml`、`start-dev.bat` / `start.ps1` / `stop.ps1`、`CHANGELOG.md`
+- Docker：HEALTHCHECK、`PYTHONUTF8`、资源限制（compose `mem_limit/cpus`）、`.dockerignore`、nginx 读/发送超时与 `client_max_body_size`
+
+### 快速启动（Windows）
+```bat
+start-dev.bat     :: 自动创建 .venv + 装依赖 + 校验 .env + 启动 uvicorn :8088
+start.ps1         :: 同上（PowerShell 版）
+stop.ps1          :: 停止监听 8088 的服务
+```
+
+### ⚠️ 安全提醒（重要）
+历史 git 提交（`f229883` / `a35417e` / `834501e`）中曾包含真实 `GOOGLE_API_KEY`，该 key 当前已被 Google 吊销（返回 `API_KEY_INVALID`）。**请及时在谷歌侧轮换 key**；若需彻底清除历史，可评估 `git filter-repo`（破坏性操作，务必备份并明确确认，严禁 `--force` 覆盖）。

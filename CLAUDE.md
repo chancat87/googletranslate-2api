@@ -38,17 +38,29 @@
 
 ```
 googletranslate-2api/
-├── main.py                              # FastAPI 入口、路由、认证依赖
+├── main.py                              # FastAPI 入口、路由、认证依赖、限流/metrics 端点
+├── pyproject.toml                       # ruff / mypy / coverage 配置
 ├── requirements.txt                     # Python 依赖
-├── Dockerfile / docker-compose.yml      # 容器化
+├── Dockerfile / docker-compose.yml      # 容器化（含 HEALTHCHECK / 资源限制）
 ├── nginx.conf                           # 反代配置（proxy_buffering off 支持 SSE）
 ├── .env / .env.example                  # 环境变量
+├── .github/workflows/ci.yml             # CI (pytest+coverage+ruff+mypy+docker build)
+├── start-dev.bat / start.ps1 / stop.ps1 # Windows 启动/停止脚本
+├── docs/                                # 上游接口文档 + archive/ 归档
+├── tests/                               # 141 passed / 1 skipped, 覆盖率 100%
+├── 计划文档/                            # 规划/规格/验收台账（本地，不入库）
 └── app/
-    ├── core/config.py                   # Pydantic Settings 配置
+    ├── core/
+    │   ├── config.py                    # Pydantic Settings 配置
+    │   ├── cache.py                     # 内存 TTL-LRU + sha256 key
+    │   ├── circuit_breaker.py           # 熔断器
+    │   ├── rate_limit.py                # 令牌桶限流
+    │   ├── metrics.py                   # Prometheus 指标
+    │   └── languages.py                 # 语言码 / 自动路由
     ├── providers/
     │   ├── base_provider.py             # 抽象基类 (ABC)
-    │   └── googletranslate_provider.py  # 谷歌翻译实现（核心）
-    └── utils/sse_utils.py               # OpenAI 兼容 SSE 格式化
+    │   └── googletranslate_provider.py  # 谷歌翻译实现（核心，含重试/熔断/批量 deadline）
+    └── utils/sse_utils.py               # OpenAI 兼容 SSE 格式化 + usage chunk
 ```
 
 ### 关键文件速查
@@ -157,9 +169,11 @@ curl -X POST "http://localhost:8088/v1/chat/completions" \
 
 ---
 
-## 已知限制 / 待办
+## 已知限制 / 待办 (v1.2.0)
 
-- 非真正实时流式：整段翻译完成后单 chunk 返回
-- 无缓存层、无速率限制、无健康检查端点
-- 仅 `google-translate` 单模型
-- `requirements.txt` 未锁版本
+- 非 token 级流式：上游接口本身非流式，长文本分段渐进流默认关（`STREAM_CHUNK_ENABLED`）
+- 上游 `translate-pa` 为非官方接口，无 SLA，可能变更/限流；重试/熔断/502/503 已兜底
+- 缓存 / 限流为进程内实现，多 worker / 多副本不共享
+- `GOOGLE_API_KEY` 历史泄漏：需用户在谷歌侧轮换（key 已失效）
+- 真实上游集成测试需有效 key + `RUN_REAL_INTEGRATION=1`，默认 skip
+- `requirements.txt` 未锁具体版本（建议按需用 pip-compile 生成锁文件）

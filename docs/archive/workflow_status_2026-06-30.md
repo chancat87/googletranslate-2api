@@ -1,3 +1,5 @@
+> 本文档为历史终局审计记录 (2026-06-30, v1/v2/v3), 已归档; 当前状态以 计划文档/项目规格.md 与 README.md 为准。
+
 # Workflow Status — googletranslate-2api 终局审计
 
 > 生成时间: 2026-06-30
