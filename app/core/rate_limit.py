@@ -32,6 +32,21 @@ class TokenBucket:
             return True
         return False
 
+    def retry_after(self) -> float:
+        """还需等待多少秒才能获得 1 个令牌 (供 429 Retry-After 头, P3-8)。
+
+        只做时间回填与读取, 不消费令牌; per_second<=0 时返回正无穷。
+        """
+        now = time.monotonic()
+        elapsed = now - self._updated
+        self._updated = now
+        self._tokens = min(self.capacity, self._tokens + elapsed * self.per_second)
+        if self._tokens >= 1.0:
+            return 0.0
+        if self.per_second <= 0:
+            return float("inf")
+        return (1.0 - self._tokens) / self.per_second
+
 
 class RateLimiter:
     """按 key 隔离的多桶限流器 (有界, LRU 淘汰)。"""
@@ -55,3 +70,12 @@ class RateLimiter:
             else:
                 self._buckets.move_to_end(key)
             return bucket.consume()
+
+    def retry_after(self, key: str) -> float:
+        """该 key 距可放行还需等待的秒数 (P3-8); 未知 key 返回 0。"""
+        with self._lock:
+            bucket = self._buckets.get(key)
+            if bucket is None:
+                return 0.0
+            self._buckets.move_to_end(key)
+            return bucket.retry_after()

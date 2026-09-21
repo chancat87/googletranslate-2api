@@ -47,6 +47,9 @@ _SENT_SPLIT_RE = re.compile(r"(?<=[。!?\.!?])\s*")
 _PARAGRAPH_SPLIT_RE = re.compile(r"\n\s*\n")
 
 _RETRYABLE_STATUS = (429, 500, 502, 503, 504)
+
+# P3-5: 可进入 SSE 内容的白名单 detail (其余统一为通用文案, 防未来误带上游/用户文本)
+_SSE_SAFE_DETAILS = frozenset({"翻译服务暂时不可用"})
 _TRANSPORT_ERRORS = (httpx.TransportError, httpx.TimeoutException)
 
 
@@ -184,9 +187,10 @@ class GoogleTranslateProvider(BaseProvider):
                 yield DONE_CHUNK
             except HTTPException as exc:
                 logger.warning(f"流式请求被 HTTP 异常中断: {exc.detail}")
-                error_chunk = create_chat_completion_chunk(
-                    request_id, model_name, str(exc.detail), "stop"
-                )
+                detail = str(exc.detail)
+                if detail not in _SSE_SAFE_DETAILS:
+                    detail = "请求处理失败"  # P3-5: 非白名单 detail 一律通用化, 不进 SSE
+                error_chunk = create_chat_completion_chunk(request_id, model_name, detail, "stop")
                 yield create_sse_data(error_chunk)
                 yield DONE_CHUNK
             except _TRANSPORT_ERRORS:

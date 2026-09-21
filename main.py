@@ -1,4 +1,5 @@
 import hmac
+import math
 import sys
 import uuid
 from contextlib import asynccontextmanager
@@ -88,6 +89,12 @@ def _check_weak_api_key() -> None:
         logger.warning(
             f"API_MASTER_KEY 长度偏短 ({len(str(master))}), 生产环境请设置 >=16 字符的强随机 key"
         )
+    unique_chars = len(set(str(master)))
+    if unique_chars < 6:
+        # P3-1: 字符多样性过低 (如 aaaaaaaa), 即使长度达标也视为弱 key
+        logger.warning(
+            f"API_MASTER_KEY 字符多样性过低 (仅 {unique_chars} 种字符), 生产环境请使用强随机 key"
+        )
 
 
 @asynccontextmanager
@@ -150,10 +157,12 @@ async def rate_limit_middleware(request: Request, call_next):
     if not rate_limiter.allow(key):
         metrics.rate_limited.labels(key_type=key_type).inc()
         logger.warning(f"rate limited ({key_type}) path={request.url.path}")
+        wait = rate_limiter.retry_after(key)
+        retry_after = max(1, math.ceil(wait)) if math.isfinite(wait) else 1
         return JSONResponse(
             status_code=429,
             content={"error": {"message": "请求过于频繁, 请稍后再试", "type": "rate_limit_error"}},
-            headers={"Retry-After": "1"},
+            headers={"Retry-After": str(retry_after)},
         )
     return await call_next(request)
 
@@ -331,6 +340,8 @@ async def list_models():
         400: {"model": ErrorResponse, "description": "参数无效"},
         401: {"model": ErrorResponse, "description": "缺少认证"},
         403: {"model": ErrorResponse, "description": "认证失败"},
+        413: {"model": ErrorResponse, "description": "单条文本超长 (MAX_TEXT_LENGTH)"},
+        422: {"model": ErrorResponse, "description": "请求体校验失败"},
     },
 )
 async def translate_batch(payload: BatchTranslateRequest):

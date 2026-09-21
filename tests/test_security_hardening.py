@@ -72,6 +72,12 @@ class TestWeakMasterKeyWarning:
         app_main._check_weak_api_key()
         assert "过弱" not in capsys.readouterr().out
 
+    def test_low_entropy_key_warns(self, capsys, monkeypatch):
+        """P3-1: 字符多样性过低 (全相同字符) 即使长度达标也告警。"""
+        monkeypatch.setattr(cfg.settings, "API_MASTER_KEY", "aaaaaaaaaaaaaaaa")
+        app_main._check_weak_api_key()
+        assert "多样性" in capsys.readouterr().out
+
 
 # ---------- 3.B.5 上游 403/429 告警 + 指标 ----------
 

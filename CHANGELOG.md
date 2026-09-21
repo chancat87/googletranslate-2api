@@ -2,6 +2,17 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [1.4.0] - 2026-09-21
+
+### 增强 (P3 项闭环)
+- **P3-8 Retry-After 精确化**：`TokenBucket.retry_after()` / `RateLimiter.retry_after(key)` 按桶回填时间计算等待秒数，429 响应头返回实际值（不再固定 "1"）
+- **P3-1 弱 key 熵检查**：主密钥字符多样性 <6 时启动告警（即使长度达标）
+- **P3-5 流式 SSE detail 白名单**：非白名单 detail 统一为 "请求处理失败"，防未来误带上游/用户文本进 SSE
+- **3.F OpenAPI 补漏**：`/v1/translate/batch` 响应声明补齐 413/422
+
+### 验证
+- 新增/更新测试：Retry-After 精确值与 inf 分支、熵告警、SSE 白名单透传/兜底、OpenAPI 413/422
+- 全量回归 **167 passed / 1 skipped，覆盖率 100%**（765 stmts）；ruff / mypy / format 0
 ## [1.3.3] - 2026-09-21
 
 ### 增强 (3.C 缓存与性能)

@@ -42,7 +42,7 @@ async def test_rate_limit_returns_429(client, monkeypatch):
     assert r1.status_code == 200
     assert r2.status_code == 200
     assert r3.status_code == 429
-    assert r3.headers.get("Retry-After") == "1"
+    assert int(r3.headers.get("Retry-After", "0")) >= 1
     body = r3.json()
     assert body["error"]["type"] == "rate_limit_error"
 

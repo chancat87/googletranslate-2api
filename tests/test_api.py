@@ -78,6 +78,9 @@ async def test_openapi_docs_available(client):
     # 关键路径必须出现在 OpenAPI spec
     assert "/v1/chat/completions" in spec["paths"]
     assert "/health" in spec["paths"]
+    # 3.F: batch 端点补齐 413/422 错误码声明
+    batch_resp = spec["paths"]["/v1/translate/batch"]["post"].get("responses", {})
+    assert "400" in batch_resp and "413" in batch_resp and "422" in batch_resp
 
 
 # ---------- 流式翻译 ----------

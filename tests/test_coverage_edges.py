@@ -113,13 +113,26 @@ class TestProviderEdgeCoverage:
 
     @pytest.mark.asyncio
     async def test_stream_http_exception_chunk(self):
+        """P3-5: 非白名单 detail 统一为通用文案, 不进入 SSE。"""
         p = _mk_provider()
         p._translate = AsyncMock(side_effect=HTTPException(status_code=503, detail="熔断"))
         resp = p._stream_response("hi", "auto", "zh-CN", "m")
         body = await _drain(resp.body_iterator)
         events = _sse_events(body)
-        assert events[0]["choices"][0]["delta"]["content"] == "熔断"
+        assert events[0]["choices"][0]["delta"]["content"] == "请求处理失败"
         assert "[DONE]" in body
+
+    @pytest.mark.asyncio
+    async def test_stream_http_exception_safe_detail_passthrough(self):
+        """P3-5: 白名单内 detail (翻译服务暂时不可用) 正常透传。"""
+        p = _mk_provider()
+        p._translate = AsyncMock(
+            side_effect=HTTPException(status_code=503, detail="翻译服务暂时不可用")
+        )
+        resp = p._stream_response("hi", "auto", "zh-CN", "m")
+        body = await _drain(resp.body_iterator)
+        events = _sse_events(body)
+        assert events[0]["choices"][0]["delta"]["content"] == "翻译服务暂时不可用"
 
     @pytest.mark.asyncio
     async def test_stream_transport_error_chunk(self, monkeypatch):

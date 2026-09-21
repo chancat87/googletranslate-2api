@@ -215,6 +215,28 @@ class TestTokenBucket:
         assert rl.allow("a") is False
         assert rl.allow("b") is True
 
+    def test_retry_after_positive_when_exhausted(self):
+        tb = TokenBucket(capacity=1, per_second=1.0)
+        assert tb.consume() is True
+        assert tb.retry_after() > 0.5  # 需等待回填 1 个令牌
+
+    def test_retry_after_zero_when_available(self):
+        tb = TokenBucket(capacity=2, per_second=10.0)
+        tb.consume()
+        assert tb.retry_after() == 0.0  # 仍有令牌
+
+    def test_limiter_retry_after_unknown_key(self):
+        rl = RateLimiter(capacity=1, per_second=1.0)
+        assert rl.retry_after("nope") == 0.0
+
+    def test_retry_after_inf_when_no_refill(self):
+        import math
+
+        tb = TokenBucket(capacity=1, per_second=0.0)
+        assert tb.consume() is True
+        assert tb.consume() is False
+        assert math.isinf(tb.retry_after())
+
 
 def _cache_hit_count() -> float:
     """读取进程内 cache_hit_total 计数 (用于命中指标断言)。"""
