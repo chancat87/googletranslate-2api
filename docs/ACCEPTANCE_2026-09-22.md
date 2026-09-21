@@ -58,3 +58,26 @@ python scripts/e2e_smoke.py --url http://<host>:8088 --expect-version 1.6.1
 # 跨进程 Redis 共享缓存: 起两个 app 进程/容器共用同一 Redis, A 翻译一次, B 再翻同文本,
 # 响应头 X-Trace-Summary 应显示 cache=hit。
 ```
+
+## 七、v2.1.1 CI 修复闭环 (2026-09-22)
+
+**问题**: v2.1.0 的 CI run `35651713119` 中
+`tests/test_redis_cache.py::test_make_redis_cache_success_with_fake_module` 失败。原因是测试用
+`monkeypatch.setitem(sys.modules, "redis.asyncio", fake)` 模拟成功路径，但 CI 收集顺序里
+`redis.asyncio` 已被其他测试提前 import，`sys.modules` 替换不再对 `make_redis_cache` 生效，
+于是走了真实连接被拒的降级分支，断言 `None is not None`。
+
+**修复**: `make_redis_cache` 增加 `client_factory` 注入参数，默认使用
+`_default_redis_client_factory()`；测试改为 `client_factory=_fake_redis` 显式注入 fakeredis，
+不再依赖 import 顺序。
+
+**验收结果**:
+
+| 门禁 | 结果 |
+|---|---|
+| GitHub Actions `test` (run 35652812969) | ✅ success |
+| GitHub Actions `security-scan` (gitleaks/SBOM/trivy) | ✅ success |
+| GitHub Actions `bench` | ✅ skipped (workflow_dispatch 条件) |
+| CI pytest | ✅ 259 passed / 1 skipped, 覆盖率 98.76% |
+| CI ruff / format / mypy / docs links / docker build smoke | ✅ 全过 |
+| 本地 Windows pytest | ✅ 259 passed / 1 skipped, 覆盖率 98.76% |

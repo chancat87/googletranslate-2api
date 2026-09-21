@@ -2,6 +2,18 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [2.1.1] - 2026-09-22
+
+### 修复
+
+- **CI Redis mock 测试顺序敏感修复**：`test_make_redis_cache_success_with_fake_module` 原先替换 `sys.modules["redis.asyncio"]`，在 CI 中该模块已被其他测试提前 import 后失效，导致真实连接 `127.0.0.1:6379` 被拒；改为 `make_redis_cache(client_factory=...)` 显式注入 fakeredis 客户端
+
+### 验证
+
+- GitHub Actions run `35652812969`：`test` / `security-scan` 全绿，`bench`（workflow_dispatch 条件）跳过
+- CI `test`：**259 passed / 1 skipped，覆盖率 98.76%**；ruff / format / mypy / 文档死链 / Docker build smoke 全过
+- 本地 Windows 全量回归：**259 passed / 1 skipped，覆盖率 98.76%**；ruff / mypy 全过
+
 ## [2.1.0] - 2026-09-22
 
 ### 新增 (用量计费 + WebSocket + 供应链安全 + 基准自动化)
