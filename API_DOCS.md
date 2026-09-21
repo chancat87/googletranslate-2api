@@ -99,6 +99,7 @@ curl http://localhost:8088/v1/chat/completions \
 **Python (OpenAI SDK):**
 ```python
 from openai import OpenAI
+
 client = OpenAI(base_url="http://localhost:8088/v1", api_key="unused")
 
 # 流式
