@@ -2,6 +2,17 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [1.4.3] - 2026-09-21
+
+### 文档与验收 (3.F)
+- README 新增「真实调用输出附录」：非流式/流式/批量/422/401/403/429 七条路径的 curl 实测输出（有效 key，非编造）
+- API_DOCS 新增「错误信封统一（含 422）」小节（含 429 Retry-After 语义、upstream_auth_error 说明）
+- README 补充批量「部分失败」示例（条目级 ok/error，整体 200）
+- 新增 OpenAPI 一致性测试：/docs 覆盖所有公开路由
+
+### 验证
+- 全量回归 169 passed / 1 skipped，覆盖率 100%（767 stmts）；ruff / mypy / format 0
+- curl 实测：非流式"你好世界"、流式 SSE+[DONE]、批量 苹果/香蕉、422/401/403 统一信封、429 Retry-After 实际秒数
 ## [1.4.2] - 2026-09-21
 
 ### 文档与验收

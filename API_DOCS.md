@@ -251,6 +251,24 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 
 ---
 
+## 错误信封统一（含 422）
+
+所有错误响应（含 400/401/403/413/422/429/500/502/503）统一为：
+
+```json
+{
+  "error": {
+    "message": "可读中文描述",
+    "type": "invalid_request_error | rate_limit_error | upstream_error | upstream_auth_error | internal_error | upstream_unavailable"
+  }
+}
+```
+
+- `422`（Pydantic 校验失败）额外带 `detail` 数组（字段级明细，含请求者自身输入回显）
+- `429`（限流开启时）带 `Retry-After` 头（实际等待秒数，按令牌桶回填计算）
+- `502` 中 `upstream_auth_error` 表示上游 403（API Key 无效/失效，永久性凭证错误）
+- 流式路径的错误以 SSE 错误 chunk 返回（HTTP 200 + `[DONE]`），文案为白名单通用文案
+
 ## v1.2.0 补充（2026-09-21）
 
 ### 新端点

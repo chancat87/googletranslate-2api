@@ -83,6 +83,27 @@ async def test_openapi_docs_available(client):
     assert "400" in batch_resp and "413" in batch_resp and "422" in batch_resp
 
 
+@pytest.mark.asyncio
+async def test_openapi_covers_all_public_routes(client):
+    """3.F 验收: /docs (openapi.json) 覆盖所有公开路由 (排除 include_in_schema=False)。"""
+    spec = (await client.get("/openapi.json")).json()
+    paths = set(spec["paths"])
+    public = set()
+    for route in app_main.app.routes:
+        path = getattr(route, "path", None)
+        if not path:
+            continue
+        if not getattr(route, "include_in_schema", True):
+            continue
+        public.add(path)
+    assert public <= paths, f"缺失于 OpenAPI: {public - paths}"
+    assert "/v1/chat/completions" in paths
+    assert "/v1/translate/detect" in paths
+    assert "/v1/translate/batch" in paths
+    assert "/v1/models" in paths
+    assert "/health" in paths and "/ready" in paths
+
+
 # ---------- 流式翻译 ----------
 
 

@@ -620,3 +620,65 @@ stop.ps1          :: 停止监听 8088 的服务
 - 测试 **168 passed / 1 skipped**，覆盖率 **100%**（767 stmts）
 - ruff check / format 0，mypy 0；pre-commit 全绿；远端 GitHub Actions CI 全 success
 - 发行版：v1.4.1（Latest）→ v1.2.0 共 8 个
+
+---
+
+## 真实调用输出附录（2026-09-21 实测, 有效 GOOGLE_API_KEY）
+
+> 以下为对本地真实服务（`uvicorn main:app`）用 curl 实跑的原始响应摘录，Authorization 已掩码；与当前代码一致，非编造。
+
+### 1) 非流式翻译（英→中）
+```bash
+curl -s -X POST http://localhost:8088/v1/chat/completions   -H "Content-Type: application/json"   -H "Authorization: Bearer <YOUR_KEY>"   -d '{"messages":[{"role":"user","content":"Hello world"}],"target_lang":"zh-CN","stream":false}'
+```
+```json
+{"id":"chatcmpl-...","object":"chat.completion","model":"google-translate",
+ "choices":[{"index":0,"message":{"role":"assistant","content":"你好世界"},"finish_reason":"stop"}],
+ "usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3,"estimate":true}}
+```
+
+### 2) 流式翻译（SSE, 截断）
+```bash
+curl -s -N -X POST http://localhost:8088/v1/chat/completions   -H "Content-Type: application/json"   -H "Authorization: Bearer <YOUR_KEY>"   -d '{"messages":[{"role":"user","content":"Good morning"}],"target_lang":"zh-CN","stream":true}'
+```
+```
+data: {"id":"chatcmpl-...","object":"chat.completion.chunk","choices":[{"delta":{"content":"早上好"},"finish_reason":null}]}
+data: {"id":"chatcmpl-...","object":"chat.completion.chunk","choices":[{"delta":{},"finish_reason":"stop"}]}
+data: [DONE]
+```
+
+### 3) 批量翻译（含部分失败语义）
+```bash
+curl -s -X POST http://localhost:8088/v1/translate/batch   -H "Content-Type: application/json" -H "Authorization: Bearer <YOUR_KEY>"   -d '{"texts":["apple","banana"],"target_lang":"zh-CN"}'
+```
+```json
+{"object":"list","data":[
+  {"text":"apple","translated":"苹果","ok":true,"error":null},
+  {"text":"banana","translated":"香蕉","ok":true,"error":null}],"count":2}
+```
+> 整体始终 200；单条失败时该条目 `"ok":false,"error":"upstream_400"`（或 `"timeout"`），不影响其他条目。
+
+### 4) 422（缺 messages, 统一信封）
+```json
+{"error":{"message":"请求参数校验失败","type":"invalid_request_error",
+  "detail":[{"type":"missing","loc":["body","messages"],"msg":"Field required","input":{"model":"x"}}]}}
+```
+
+### 5) 401（无 token）
+```json
+{"error":{"message":"需要 Bearer Token 认证。","type":"invalid_request_error"}}
+```
+
+### 6) 403（错 token）
+```json
+{"error":{"message":"无效的 API Key。","type":"invalid_request_error"}}
+```
+
+### 7) 429（限流开启后, 返回 Retry-After 实际秒数）
+```http
+HTTP/1.1 429 Too Many Requests
+Retry-After: 998
+```
+```json
+{"error":{"message":"请求过于频繁, 请稍后再试","type":"rate_limit_error"}}
+```
