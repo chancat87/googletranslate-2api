@@ -175,3 +175,16 @@ Redis / Secret 示例 + Kustomize），并给 Dockerfile/compose 增加优雅停
 | CI Web UI browser E2E 步骤 | ✅ 已加入 `.github/workflows/ci.yml` |
 | 防回归断言 | ✅ 导航委托只匹配导航按钮类 |
 | 全量回归 | ✅ 288 passed / 1 skipped，覆盖率 98.89% |
+
+## 十三、v2.6.0 响应压缩 (2026-09-22)
+
+**交付**: Nginx 网关开启 gzip，压缩普通 JSON/文本响应，SSE 流式保持不压缩不缓冲。
+
+| 项 | 结果 |
+|---|---|
+| `gzip on / level 5 / min_length 1024` | ✅ 已配置 |
+| `gzip_proxied any` + `gzip_vary on` | ✅ 已配置 |
+| JSON / 文本 / JS / CSS / SVG gzip_types | ✅ 已配置 |
+| SSE 不压缩 | ✅ `text/event-stream` 不在 gzip_types，`proxy_buffering off` 保留 |
+| nginx 静态验收 | ✅ 2/2 |
+| 全量回归 | ✅ 290 passed / 1 skipped，覆盖率 98.89% |

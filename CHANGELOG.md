@@ -2,6 +2,18 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [2.6.0] - 2026-09-22
+
+### 新增 (响应压缩)
+
+- Nginx 开启 gzip：JSON / 文本 / JS / CSS / SVG（`gzip_comp_level 5`、`gzip_min_length 1024`、`gzip_proxied any`、`gzip_vary on`）
+- SSE 流式不压缩：`text/event-stream` 不在 gzip_types，配合 `proxy_buffering off` 保持逐块推送
+
+### 验证
+
+- 新增 2 项 nginx 静态验收：gzip 配置齐全、SSE 不进 gzip_types
+- 全量回归 **290 passed / 1 skipped，覆盖率 98.89%**；ruff / format / mypy / docs links 全过
+
 ## [2.5.1] - 2026-09-22
 
 ### 修复 / 测试
