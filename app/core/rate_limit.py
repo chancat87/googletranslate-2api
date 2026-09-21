@@ -3,11 +3,14 @@
 按请求维度 (客户端 IP / 认证 key) 维护独立令牌桶。默认关闭 (RATE_LIMIT_ENABLED)。
 注意: 进程内实现, 多 worker / 多副本不共享 —— 水平扩展需 Redis 或网关层
 (nginx limit_req) 兜底, 详见 下一步改进指南 §3.B。
+
+P2-2: 桶字典有界 (max_keys), 超出时淘汰最久未访问的桶, 防止攻击者用随机 key 撑爆内存;
+使用 OrderedDict 便于 LRU 淘汰 (每次访问 move_to_end)。
 """
 
 import threading
 import time
-from collections import defaultdict
+from collections import OrderedDict
 
 
 class TokenBucket:
@@ -31,16 +34,24 @@ class TokenBucket:
 
 
 class RateLimiter:
-    """按 key 隔离的多桶限流器。"""
+    """按 key 隔离的多桶限流器 (有界, LRU 淘汰)。"""
 
-    def __init__(self, capacity: int, per_second: float) -> None:
+    def __init__(self, capacity: int, per_second: float, max_keys: int = 10000) -> None:
         self._capacity = capacity
         self._per_second = per_second
-        self._buckets: defaultdict[str, TokenBucket] = defaultdict(
-            lambda: TokenBucket(capacity, per_second)
-        )
+        self._max_keys = max(1, max_keys)
+        self._buckets: OrderedDict[str, TokenBucket] = OrderedDict()
         self._lock = threading.Lock()
 
     def allow(self, key: str) -> bool:
         with self._lock:
-            return self._buckets[key].consume()
+            bucket = self._buckets.get(key)
+            if bucket is None:
+                if len(self._buckets) >= self._max_keys:
+                    # 淘汰最久未访问的桶 (有序字典首个)
+                    self._buckets.popitem(last=False)
+                bucket = TokenBucket(self._capacity, self._per_second)
+                self._buckets[key] = bucket
+            else:
+                self._buckets.move_to_end(key)
+            return bucket.consume()

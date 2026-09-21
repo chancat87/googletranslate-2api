@@ -69,6 +69,8 @@ class GoogleTranslateProvider(BaseProvider):
     async def initialize(self):
         if not settings.GOOGLE_API_KEY:
             raise ValueError("GOOGLE_API_KEY 未在 .env 文件中配置。")
+        if "在这里填入" in settings.GOOGLE_API_KEY:
+            raise ValueError("GOOGLE_API_KEY 仍是示例占位符, 请填入真实 Key 后启动。")
         self.client = httpx.AsyncClient(timeout=settings.API_REQUEST_TIMEOUT)
         # 每次初始化重建缓存, 避免跨测试/重启的脏数据
         self.cache = make_cache()
@@ -113,7 +115,19 @@ class GoogleTranslateProvider(BaseProvider):
             markdown_text = await self._translate(text, source_lang, target_lang)
             completion = create_chat_completion(request_id, model_name, markdown_text, text)
             return JSONResponse(content=completion)
-        except httpx.HTTPStatusError:
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 403:
+                # P2-4: 403 是永久性凭证错误, 用独立语义暴露, 便于监控区分
+                logger.error("上游返回 403: GOOGLE_API_KEY 无效或已失效")
+                return JSONResponse(
+                    status_code=502,
+                    content={
+                        "error": {
+                            "message": "上游 API Key 无效或已失效",
+                            "type": "upstream_auth_error",
+                        }
+                    },
+                )
             logger.error(f"上游返回非 200 (src={source_lang} tgt={target_lang})")
             return JSONResponse(
                 status_code=502,
@@ -158,11 +172,14 @@ class GoogleTranslateProvider(BaseProvider):
                         create_chat_completion_usage_chunk(request_id, model_name, text, joined)
                     )
                 yield DONE_CHUNK
-            except httpx.HTTPStatusError:
-                logger.error(f"上游返回非 200 (src={source_lang} tgt={target_lang})")
-                error_chunk = create_chat_completion_chunk(
-                    request_id, model_name, "翻译服务暂时不可用", "stop"
-                )
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 403:
+                    logger.error("上游返回 403: GOOGLE_API_KEY 无效或已失效")
+                    err_text = "上游 API Key 无效或已失效"
+                else:
+                    logger.error(f"上游返回非 200 (src={source_lang} tgt={target_lang})")
+                    err_text = "翻译服务暂时不可用"
+                error_chunk = create_chat_completion_chunk(request_id, model_name, err_text, "stop")
                 yield create_sse_data(error_chunk)
                 yield DONE_CHUNK
             except HTTPException as exc:
@@ -299,6 +316,8 @@ class GoogleTranslateProvider(BaseProvider):
             logger.warning("上游返回 429: 触发 Google 频率限制, 已进入退避重试")
         elif code == "transport":
             logger.error("上游网络错误 (连接/超时)")
+        else:
+            logger.warning(f"上游返回非预期状态 {code}")
         if self.circuit_breaker is None:
             return
         if code == "transport" or code in ("429", "500", "502", "503", "504"):
@@ -344,7 +363,7 @@ class GoogleTranslateProvider(BaseProvider):
                     out = await self._translate(t, source_lang, target_lang)
                     return {"text": t, "translated": out, "ok": True, "error": None}
                 except Exception as exc:
-                    logger.warning(f"批量翻译单条失败: {t}")
+                    logger.warning("批量翻译单条失败 (已计入指标)")
                     return {
                         "text": t,
                         "translated": "",
@@ -501,7 +520,8 @@ class GoogleTranslateProvider(BaseProvider):
             if isinstance(response_data[0], list) and response_data[0]:
                 translated_html = response_data[0][0]
         elif not isinstance(response_data, list):
-            raise ValueError(f"上游响应格式不符合预期: {response_data}")
+            preview = str(response_data)[:200]
+            raise ValueError(f"上游响应格式不符合预期: {preview}")
 
         soup = BeautifulSoup(translated_html, "html.parser")
         clean_text = soup.get_text().replace("\u200b", "")

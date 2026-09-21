@@ -20,6 +20,8 @@ class Settings(BaseSettings):
 
     API_MASTER_KEY: str | None = None
     NGINX_PORT: int = 8088
+    # P1-1: 命中公开示例主密钥时默认拒绝启动; true 则显式放行 (仍会告警)
+    ALLOW_WEAK_API_KEY: bool = False
 
     GOOGLE_API_KEY: str | None = None
 
@@ -71,6 +73,9 @@ class Settings(BaseSettings):
     RATE_LIMIT_ENABLED: bool = False
     RATE_LIMIT_CAPACITY: int = 30
     RATE_LIMIT_PER_SECOND: float = 10.0
+    RATE_LIMIT_MAX_KEYS: int = 10000  # 限流桶上限, 防无界内存增长 (P2-2)
+    # 可信反代后取 X-Forwarded-For 首跳做 IP 维度 (P2-3); 默认关, 防伪造
+    TRUST_PROXY_HEADER: bool = False
 
     # --- M12 指标 ---
     METRICS_ENABLED: bool = True

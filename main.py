@@ -42,7 +42,9 @@ _configure_logging()
 provider = GoogleTranslateProvider()
 
 # --- M6 限流器 (默认关; 进程内令牌桶, 多副本需网关层兜底) ---
-rate_limiter = RateLimiter(settings.RATE_LIMIT_CAPACITY, settings.RATE_LIMIT_PER_SECOND)
+rate_limiter = RateLimiter(
+    settings.RATE_LIMIT_CAPACITY, settings.RATE_LIMIT_PER_SECOND, settings.RATE_LIMIT_MAX_KEYS
+)
 RATE_LIMIT_SKIP_PATHS = {
     "/",
     "/health",
@@ -57,19 +59,34 @@ RATE_LIMIT_SKIP_PATHS = {
 _WEAK_MASTER_KEY_MARKERS = ("default-key", "changeme", "please-change")
 
 
+def _hash_key_component(s: str) -> str:
+    """把 token/IP 摘要为定长 key, 避免超长原始串进入限流桶字典 (P2-2/P2-3)。"""
+    import hashlib
+
+    return hashlib.sha256(s.encode("utf-8")).hexdigest()[:24]
+
+
 def _check_weak_api_key() -> None:
-    """3.B.2 启动安全告警: 认证关闭 / 弱 key / 示例默认 key 时打 warning。"""
+    """3.B.2 启动安全检查: 认证关闭告警 / 公开示例默认 key 拒绝启动 / 短 key 告警。"""
     master = settings.API_MASTER_KEY
-    if not master or master == "1":
+    if not master or str(master).strip() == "1":
         logger.warning(
             "API_MASTER_KEY 未设置或为 '1', 认证已关闭 (仅限本地调试, 生产必须设置强随机 key)"
         )
         return
-    weak = len(master) < 16 or any(m in master.lower() for m in _WEAK_MASTER_KEY_MARKERS)
-    if weak:
+    if any(m in str(master).lower() for m in _WEAK_MASTER_KEY_MARKERS):
+        if not settings.ALLOW_WEAK_API_KEY:
+            raise RuntimeError(
+                "API_MASTER_KEY 命中公开示例/弱 key 标记, 已拒绝启动; "
+                "请设置强随机 key (>=16 字符), 或显式设置 ALLOW_WEAK_API_KEY=true 强制放行"
+            )
         logger.warning(
-            f"API_MASTER_KEY 过弱或为示例默认值 (长度 {len(master)}), "
-            "生产环境请设置 >=16 字符的强随机 key"
+            "API_MASTER_KEY 命中公开示例/弱 key 标记, 已显式放行 (ALLOW_WEAK_API_KEY=true), 生产不建议"
+        )
+        return
+    if len(str(master)) < 16:
+        logger.warning(
+            f"API_MASTER_KEY 长度偏短 ({len(str(master))}), 生产环境请设置 >=16 字符的强随机 key"
         )
 
 
@@ -116,16 +133,18 @@ async def rate_limit_middleware(request: Request, call_next):
     if not settings.RATE_LIMIT_ENABLED or request.url.path in RATE_LIMIT_SKIP_PATHS:
         return await call_next(request)
 
-    auth = request.headers.get("Authorization", "")
-    token = None
-    if auth.lower().startswith("bearer"):
-        token = auth.split(" ")[-1].strip() or None
+    token = _extract_bearer_token(request.headers.get("Authorization"))
 
     if token:
-        key = f"key:{token}"
+        key = f"key:{_hash_key_component(token)}"
         key_type = "key"
     else:
-        key = f"ip:{request.client.host if request.client else 'unknown'}"
+        client_ip = request.client.host if request.client else "unknown"
+        if settings.TRUST_PROXY_HEADER:
+            # P2-3: 可信反代后取 X-Forwarded-For 首个外部跳 (默认关, 防伪造)
+            ff = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+            client_ip = ff if ff else client_ip
+        key = f"ip:{client_ip}"
         key_type = "ip"
 
     if not rate_limiter.allow(key):
@@ -218,6 +237,8 @@ async def verify_api_key(authorization: str | None = Header(None)):
     token = _extract_bearer_token(authorization)
     if token is None:
         raise HTTPException(status_code=401, detail="需要 Bearer Token 认证。")
+    if not token.isascii():
+        raise HTTPException(status_code=401, detail="需要合法的 Bearer Token 认证。")
     keys = [k.strip() for k in master.split(",") if k.strip()]
     if not any(hmac.compare_digest(token, k) for k in keys):
         raise HTTPException(status_code=403, detail="无效的 API Key。")

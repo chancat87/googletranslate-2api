@@ -8,7 +8,9 @@ import main as app_main
 import pytest
 from app.core import config as cfg
 from app.core.metrics import metrics
+from app.core.rate_limit import RateLimiter
 from app.providers.googletranslate_provider import GoogleTranslateProvider
+from fastapi import HTTPException
 
 
 def _metric_value(text: str, name: str, **labels) -> float:
@@ -37,18 +39,27 @@ def _resp(status: int, translated: str = "x"):
 
 
 class TestWeakMasterKeyWarning:
-    def test_default_example_key_warns(self, capsys, monkeypatch):
+    def test_default_example_key_rejected(self, capsys, monkeypatch):
+        """P1-1: 命中公开示例默认 key 且未显式放行 -> 拒绝启动。"""
         monkeypatch.setattr(
             cfg.settings, "API_MASTER_KEY", "sk-googletranslate-2api-default-key-please-change-me"
         )
+        monkeypatch.setattr(cfg.settings, "ALLOW_WEAK_API_KEY", False)
+        with pytest.raises(RuntimeError):
+            app_main._check_weak_api_key()
+
+    def test_default_example_key_warns_when_allowed(self, capsys, monkeypatch):
+        monkeypatch.setattr(
+            cfg.settings, "API_MASTER_KEY", "sk-googletranslate-2api-default-key-please-change-me"
+        )
+        monkeypatch.setattr(cfg.settings, "ALLOW_WEAK_API_KEY", True)
         app_main._check_weak_api_key()
-        out = capsys.readouterr().out
-        assert "API_MASTER_KEY" in out and "过弱" in out
+        assert "已显式放行" in capsys.readouterr().out
 
     def test_short_key_warns(self, capsys, monkeypatch):
         monkeypatch.setattr(cfg.settings, "API_MASTER_KEY", "short")
         app_main._check_weak_api_key()
-        assert "过弱" in capsys.readouterr().out
+        assert "长度偏短" in capsys.readouterr().out
 
     def test_auth_disabled_warns(self, capsys, monkeypatch):
         monkeypatch.setattr(cfg.settings, "API_MASTER_KEY", None)
@@ -140,3 +151,107 @@ class TestErrorSanitization:
                 if ev.get("choices"):
                     contents.append(ev["choices"][0]["delta"].get("content", ""))
         assert "内部服务器错误" in "".join(contents)
+
+
+@pytest.fixture
+async def client(monkeypatch):
+    """ASGI 客户端 (认证关闭), 供限流/头相关测试使用。"""
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    monkeypatch.setenv("API_MASTER_KEY", "1")
+    from app.core.config import Settings
+
+    saved = app_main.settings
+    app_main.settings = Settings()
+    await app_main.provider.initialize()
+    app_main.provider.reset_health()
+    if app_main.provider.cache is not None:
+        app_main.provider.cache.clear()
+    from httpx import ASGITransport, AsyncClient
+
+    transport = ASGITransport(app=app_main.app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c
+    await app_main.provider.close()
+    app_main.settings = saved
+
+
+class TestReviewSecurityFixes:
+    """3.B 审查修复 (P2-1/P2-2/P2-3/P2-4/P3-9) 验收。"""
+
+    @pytest.mark.asyncio
+    async def test_initialize_raises_on_placeholder_key(self, monkeypatch):
+        """P3-9: GOOGLE_API_KEY 为示例占位符 -> 拒绝启动。"""
+        monkeypatch.setattr(cfg.settings, "GOOGLE_API_KEY", "在这里填入你的谷歌翻译 API Key")
+        from app.providers.googletranslate_provider import GoogleTranslateProvider
+
+        with pytest.raises(ValueError):
+            await GoogleTranslateProvider().initialize()
+
+    @pytest.mark.asyncio
+    async def test_non_ascii_token_returns_401_not_500(self, monkeypatch):
+        """P2-1: 非 ASCII token 不得触发 compare_digest TypeError -> 500 (直接调用依赖)。"""
+        monkeypatch.setattr(cfg.settings, "API_MASTER_KEY", "strong-key-1234567890")
+        with pytest.raises(HTTPException) as e:
+            await app_main.verify_api_key("Bearer 中文token")
+        assert e.value.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_403_nonstream_maps_to_auth_error(self):
+        """P2-4: 403 -> 502 + type=upstream_auth_error (可区分永久凭证错误)。"""
+        import json as _json
+
+        p = _mk_provider()
+        p.client.post.return_value = _resp(403)
+        resp = await p.chat_completion(
+            {"messages": [{"role": "user", "content": "hi"}], "stream": False}
+        )
+        assert resp.status_code == 502
+        j = _json.loads(resp.body)
+        assert j["error"]["type"] == "upstream_auth_error"
+        assert "API Key" in j["error"]["message"]
+
+    @pytest.mark.asyncio
+    async def test_403_stream_chunk_mentions_api_key(self):
+        p = _mk_provider()
+        p.client.post.return_value = _resp(403)
+        resp = p._stream_response("hi", "auto", "zh-CN", "m")
+        chunks = []
+        async for c in resp.body_iterator:
+            chunks.append(c)
+        body = b"".join(chunks).decode("utf-8")
+        assert "API Key" in body
+
+    def test_rate_limiter_bounded_eviction(self):
+        """P2-2: 限流桶有界, 超出 max_keys 淘汰最旧。"""
+        rl = RateLimiter(capacity=1, per_second=0.001, max_keys=2)
+        assert rl.allow("a") is True
+        assert rl.allow("b") is True
+        assert rl.allow("c") is True  # 触发淘汰 a
+        assert rl.allow("a") is True  # a 被淘汰后重新建桶
+        assert len(rl._buckets) == 2  # 内存有界
+
+    @pytest.mark.asyncio
+    async def test_xff_dimension_when_trusted(self, client, monkeypatch):
+        """P2-3: TRUST_PROXY_HEADER=true 时按 X-Forwarded-For 首跳隔离。"""
+        monkeypatch.setattr(app_main.settings, "RATE_LIMIT_ENABLED", True)
+        monkeypatch.setattr(app_main, "rate_limiter", RateLimiter(1, 0.001, 100))
+        monkeypatch.setattr(app_main.settings, "TRUST_PROXY_HEADER", True)
+        h1 = {"X-Forwarded-For": "1.1.1.1"}
+        h2 = {"X-Forwarded-For": "2.2.2.2"}
+        r1 = await client.get("/v1/models", headers=h1)
+        r2 = await client.get("/v1/models", headers=h1)
+        r3 = await client.get("/v1/models", headers=h2)
+        assert r1.status_code == 200
+        assert r2.status_code == 429
+        assert r3.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_xff_ignored_when_untrusted(self, client, monkeypatch):
+        """P2-3: TRUST_PROXY_HEADER=false (默认) 忽略 XFF。"""
+        monkeypatch.setattr(app_main.settings, "RATE_LIMIT_ENABLED", True)
+        monkeypatch.setattr(app_main, "rate_limiter", RateLimiter(1, 0.001, 100))
+        monkeypatch.setattr(app_main.settings, "TRUST_PROXY_HEADER", False)
+        r1 = await client.get("/v1/models", headers={"X-Forwarded-For": "1.1.1.1"})
+        r2 = await client.get("/v1/models", headers={"X-Forwarded-For": "2.2.2.2"})
+        assert r1.status_code == 200
+        assert r2.status_code == 429  # 同一 client 共享桶
