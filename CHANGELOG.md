@@ -2,6 +2,24 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [1.3.3] - 2026-09-21
+
+### 增强 (3.C 缓存与性能)
+- 首尾空白归一化 (3.C.3)：`_translate` / `_stream_translate` 计算缓存 key 前仅 `strip()` 首尾空白，
+  `" hello "` 与 `"hello"` 共享缓存命中（批量条目同样受益），不再因空白差异重复打上游。
+- 命中指标可观测：`cache_hit_total` / `cache_miss_total`（`/metrics`），命中场景计数已验证。
+- 修正 `APP_VERSION` 漂移至 v1.3.3。
+
+### 验证
+- 新增 4 个缓存归一化测试（translate / stream / batch 共享缓存 + 命中指标 +1）
+- 全量回归 161 passed / 1 skipped，覆盖率 100%（738 stmts）；ruff / mypy / format 0
+
+## [1.3.2] - 2026-09-21
+
+### 工程
+- API_DOCS.md / docs/上游接口直连文档.md：ruff-format 规范化文档内 python 代码块
+- pre-commit 真实可用（ruff + ruff-format 全绿）；远端 GitHub Actions CI 全 run success
+
 ## [1.3.1] - 2026-09-21
 
 ### 安全加固（3.B 审查修复, code-review 子代理审计后落地）
