@@ -1,12 +1,10 @@
 """Provider 逻辑测试 — mock httpx 上游, 离线可运行。"""
-import asyncio
-import json
-from unittest.mock import AsyncMock, MagicMock, patch
+
+from unittest.mock import MagicMock
 
 import pytest
-from fastapi import HTTPException
-
 from app.providers.googletranslate_provider import GoogleTranslateProvider
+from fastapi import HTTPException
 
 
 def _make_provider():
@@ -16,6 +14,7 @@ def _make_provider():
 
 
 # ---------- _extract_text ----------
+
 
 class TestExtractText:
     def test_string(self):
@@ -28,7 +27,11 @@ class TestExtractText:
         assert GoogleTranslateProvider._extract_text(["a", "b"]) == "ab"
 
     def test_list_of_text_segments(self):
-        content = [{"type": "text", "text": "foo"}, {"type": "image_url"}, {"type": "text", "text": "bar"}]
+        content = [
+            {"type": "text", "text": "foo"},
+            {"type": "image_url"},
+            {"type": "text", "text": "bar"},
+        ]
         assert GoogleTranslateProvider._extract_text(content) == "foobar"
 
     def test_list_ignores_non_text(self):
@@ -40,12 +43,13 @@ class TestExtractText:
 
 # ---------- _validate_and_extract ----------
 
+
 class TestValidateAndExtract:
     def test_happy_path(self):
         p = _make_provider()
-        text, src, tgt = p._validate_and_extract({
-            "messages": [{"role": "user", "content": "你好"}]
-        })
+        text, src, tgt = p._validate_and_extract(
+            {"messages": [{"role": "user", "content": "你好"}]}
+        )
         assert text == "你好"
         assert src == "auto"
         assert tgt == "en"  # 中文自动转英文
@@ -77,32 +81,39 @@ class TestValidateAndExtract:
     def test_bad_source_lang(self):
         p = _make_provider()
         with pytest.raises(HTTPException) as e:
-            p._validate_and_extract({
-                "messages": [{"role": "user", "content": "hi"}],
-                "source_lang": "klingon",
-            })
+            p._validate_and_extract(
+                {
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "source_lang": "klingon",
+                }
+            )
         assert e.value.status_code == 400
 
     def test_bad_target_lang(self):
         p = _make_provider()
         with pytest.raises(HTTPException) as e:
-            p._validate_and_extract({
-                "messages": [{"role": "user", "content": "hi"}],
-                "target_lang": "xxxx",
-            })
+            p._validate_and_extract(
+                {
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "target_lang": "xxxx",
+                }
+            )
         assert e.value.status_code == 400
 
     def test_explicit_langs(self):
         p = _make_provider()
-        text, src, tgt = p._validate_and_extract({
-            "messages": [{"role": "user", "content": "bonjour"}],
-            "source_lang": "fr",
-            "target_lang": "de",
-        })
+        _, src, tgt = p._validate_and_extract(
+            {
+                "messages": [{"role": "user", "content": "bonjour"}],
+                "source_lang": "fr",
+                "target_lang": "de",
+            }
+        )
         assert src == "fr" and tgt == "de"
 
 
 # ---------- _clean_response / _parse_upstream_error ----------
+
 
 class TestCleanResponse:
     def test_normal_nested(self):

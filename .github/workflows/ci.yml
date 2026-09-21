@@ -1,0 +1,32 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt pytest-cov ruff mypy prometheus_client
+
+      - name: Ruff lint
+        run: python -m ruff check app main.py tests
+
+      - name: Ruff format check
+        run: python -m ruff format --check app main.py tests
+
+      - name: Mypy type check
+        run: python -m mypy app main.py
+
+      - name: Test with coverage
+        run: python -m pytest --cov=app --cov=main --cov-report=term-missing
+
+      - name: Docker build smoke
+        run: docker build -t googletranslate-2api .

@@ -1,5 +1,6 @@
 """语言码校验与自动路由 — 纯单元, 无外部依赖。"""
-from app.core.languages import ALL_LANGUAGES, is_supported, auto_detect_target
+
+from app.core.languages import ALL_LANGUAGES, auto_detect_target, is_supported
 
 
 class TestIsSupported:

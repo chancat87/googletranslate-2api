@@ -1,11 +1,11 @@
 """API 集成测试 — ASGI transport + mock 上游 httpx, 离线可运行。"""
+
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import main as app_main
 import pytest
 from httpx import ASGITransport, AsyncClient
-
-import main as app_main
 
 
 def _mock_upstream_response(translated_html: str = "<b>你好世界</b>", status: int = 200):
@@ -28,6 +28,7 @@ async def client(monkeypatch):
     monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
     monkeypatch.setenv("API_MASTER_KEY", "1")  # 关闭认证, 专注功能
     from app.core.config import Settings
+
     saved_settings = app_main.settings
     app_main.settings = Settings()
     await app_main.provider.initialize()
@@ -42,6 +43,7 @@ async def client(monkeypatch):
 
 
 # ---------- 系统端点 ----------
+
 
 @pytest.mark.asyncio
 async def test_root(client):
@@ -80,13 +82,17 @@ async def test_openapi_docs_available(client):
 
 # ---------- 流式翻译 ----------
 
+
 @pytest.mark.asyncio
 async def test_stream_translate(client):
-    with patch.object(app_main.provider.client, "post",
-                      new=AsyncMock(return_value=_mock_upstream_response("你好世界"))):
-        r = await client.post("/v1/chat/completions", json={
-            "messages": [{"role": "user", "content": "hello world"}]
-        })
+    with patch.object(
+        app_main.provider.client,
+        "post",
+        new=AsyncMock(return_value=_mock_upstream_response("你好世界")),
+    ):
+        r = await client.post(
+            "/v1/chat/completions", json={"messages": [{"role": "user", "content": "hello world"}]}
+        )
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/event-stream")
     body = r.content.decode("utf-8")
@@ -105,29 +111,40 @@ async def test_stream_translate(client):
 
 @pytest.mark.asyncio
 async def test_stream_finish_reason_stop(client):
-    with patch.object(app_main.provider.client, "post",
-                      new=AsyncMock(return_value=_mock_upstream_response("x"))):
-        r = await client.post("/v1/chat/completions", json={
-            "messages": [{"role": "user", "content": "hi"}]
-        })
+    with patch.object(
+        app_main.provider.client, "post", new=AsyncMock(return_value=_mock_upstream_response("x"))
+    ):
+        r = await client.post(
+            "/v1/chat/completions", json={"messages": [{"role": "user", "content": "hi"}]}
+        )
     body = r.content.decode("utf-8")
-    fr = [json.loads(l[6:])["choices"][0]["finish_reason"]
-          for l in body.splitlines()
-          if l.startswith("data: ") and l != "data: [DONE]"
-          and json.loads(l[6:])["choices"][0]["finish_reason"]]
+    fr = [
+        json.loads(line[6:])["choices"][0]["finish_reason"]
+        for line in body.splitlines()
+        if line.startswith("data: ")
+        and line != "data: [DONE]"
+        and json.loads(line[6:])["choices"][0]["finish_reason"]
+    ]
     assert fr == ["stop"]
 
 
 # ---------- 非流式翻译 ----------
 
+
 @pytest.mark.asyncio
 async def test_nonstream_translate(client):
-    with patch.object(app_main.provider.client, "post",
-                      new=AsyncMock(return_value=_mock_upstream_response("你好世界"))):
-        r = await client.post("/v1/chat/completions", json={
-            "messages": [{"role": "user", "content": "hello world"}],
-            "stream": False,
-        })
+    with patch.object(
+        app_main.provider.client,
+        "post",
+        new=AsyncMock(return_value=_mock_upstream_response("你好世界")),
+    ):
+        r = await client.post(
+            "/v1/chat/completions",
+            json={
+                "messages": [{"role": "user", "content": "hello world"}],
+                "stream": False,
+            },
+        )
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("application/json")
     j = r.json()
@@ -144,12 +161,18 @@ async def test_nonstream_default_model_not_null(client):
     之前 model_dump(exclude_none=False) 把 None 透传, 导致响应 model=null,
     破坏 OpenAI 类型契约 (model 应为 str)。
     """
-    with patch.object(app_main.provider.client, "post",
-                      new=AsyncMock(return_value=_mock_upstream_response("你好"))):
-        r = await client.post("/v1/chat/completions", json={
-            "messages": [{"role": "user", "content": "hello"}],
-            "stream": False,
-        })
+    with patch.object(
+        app_main.provider.client,
+        "post",
+        new=AsyncMock(return_value=_mock_upstream_response("你好")),
+    ):
+        r = await client.post(
+            "/v1/chat/completions",
+            json={
+                "messages": [{"role": "user", "content": "hello"}],
+                "stream": False,
+            },
+        )
     assert r.status_code == 200
     model = r.json().get("model")
     assert model is not None, "model 字段不能为 null"
@@ -159,14 +182,20 @@ async def test_nonstream_default_model_not_null(client):
 
 @pytest.mark.asyncio
 async def test_nonstream_with_explicit_langs(client):
-    with patch.object(app_main.provider.client, "post",
-                      new=AsyncMock(return_value=_mock_upstream_response("こんにちは"))):
-        r = await client.post("/v1/chat/completions", json={
-            "messages": [{"role": "user", "content": "good morning"}],
-            "source_lang": "en",
-            "target_lang": "ja",
-            "stream": False,
-        })
+    with patch.object(
+        app_main.provider.client,
+        "post",
+        new=AsyncMock(return_value=_mock_upstream_response("こんにちは")),
+    ):
+        r = await client.post(
+            "/v1/chat/completions",
+            json={
+                "messages": [{"role": "user", "content": "good morning"}],
+                "source_lang": "en",
+                "target_lang": "ja",
+                "stream": False,
+            },
+        )
     assert r.status_code == 200
     assert "こんにちは" in r.json()["choices"][0]["message"]["content"]
 
@@ -181,18 +210,28 @@ async def test_nonstream_content_list_segments(client):
         return _mock_upstream_response("result")
 
     with patch.object(app_main.provider.client, "post", new=_capture_post):
-        r = await client.post("/v1/chat/completions", json={
-            "messages": [{"role": "user",
-                          "content": [{"type": "text", "text": "hello "},
-                                      {"type": "text", "text": "world"}]}],
-            "stream": False,
-        })
+        r = await client.post(
+            "/v1/chat/completions",
+            json={
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "hello "},
+                            {"type": "text", "text": "world"},
+                        ],
+                    }
+                ],
+                "stream": False,
+            },
+        )
     assert r.status_code == 200
     # 验证 provider 收到了拼接后的 "hello world"
     assert captured["payload"][0][0][0] == "hello world"
 
 
 # ---------- 错误路径 (状态码语义) ----------
+
 
 @pytest.mark.asyncio
 async def test_err_missing_messages(client):
@@ -202,41 +241,50 @@ async def test_err_missing_messages(client):
 
 @pytest.mark.asyncio
 async def test_err_empty_content(client):
-    r = await client.post("/v1/chat/completions", json={
-        "messages": [{"role": "user", "content": ""}]
-    })
+    r = await client.post(
+        "/v1/chat/completions", json={"messages": [{"role": "user", "content": ""}]}
+    )
     assert r.status_code == 400
     assert "error" in r.json()
 
 
 @pytest.mark.asyncio
 async def test_err_no_user_message(client):
-    r = await client.post("/v1/chat/completions", json={
-        "messages": [{"role": "system", "content": "hi"}]
-    })
+    r = await client.post(
+        "/v1/chat/completions", json={"messages": [{"role": "system", "content": "hi"}]}
+    )
     assert r.status_code == 400
 
 
 @pytest.mark.asyncio
 async def test_err_bad_lang(client):
-    r = await client.post("/v1/chat/completions", json={
-        "messages": [{"role": "user", "content": "hi"}],
-        "target_lang": "klingon",
-    })
+    r = await client.post(
+        "/v1/chat/completions",
+        json={
+            "messages": [{"role": "user", "content": "hi"}],
+            "target_lang": "klingon",
+        },
+    )
     assert r.status_code == 400
 
 
 @pytest.mark.asyncio
 async def test_err_upstream_nonstream_returns_502(client):
     import httpx
+
     bad = _mock_upstream_response("err", status=400)
-    with patch.object(app_main.provider.client, "post",
-                      new=AsyncMock(side_effect=httpx.HTTPStatusError(
-                          "400", request=bad.request, response=bad))):
-        r = await client.post("/v1/chat/completions", json={
-            "messages": [{"role": "user", "content": "unique-502-text"}],
-            "stream": False,
-        })
+    with patch.object(
+        app_main.provider.client,
+        "post",
+        new=AsyncMock(side_effect=httpx.HTTPStatusError("400", request=bad.request, response=bad)),
+    ):
+        r = await client.post(
+            "/v1/chat/completions",
+            json={
+                "messages": [{"role": "user", "content": "unique-502-text"}],
+                "stream": False,
+            },
+        )
     assert r.status_code == 502
     assert r.json()["error"]["type"] == "upstream_error"
 
@@ -245,13 +293,19 @@ async def test_err_upstream_nonstream_returns_502(client):
 async def test_err_upstream_stream_returns_chunk(client):
     """流式下上游错误以 error chunk 形式返回, HTTP 仍 200。"""
     import httpx
+
     bad = _mock_upstream_response("err", status=400)
-    with patch.object(app_main.provider.client, "post",
-                      new=AsyncMock(side_effect=httpx.HTTPStatusError(
-                          "400", request=bad.request, response=bad))):
-        r = await client.post("/v1/chat/completions", json={
-            "messages": [{"role": "user", "content": "unique-stream-err-text"}],
-        })
+    with patch.object(
+        app_main.provider.client,
+        "post",
+        new=AsyncMock(side_effect=httpx.HTTPStatusError("400", request=bad.request, response=bad)),
+    ):
+        r = await client.post(
+            "/v1/chat/completions",
+            json={
+                "messages": [{"role": "user", "content": "unique-stream-err-text"}],
+            },
+        )
     assert r.status_code == 200  # SSE 已建立
     body = r.content.decode("utf-8")
     # 新实现: 错误 chunk 文案为 "翻译服务暂时不可用" (json 转义为 \uXXXX)
@@ -262,12 +316,14 @@ async def test_err_upstream_stream_returns_chunk(client):
 
 # ---------- 认证 ----------
 
+
 @pytest.mark.asyncio
 async def test_auth_rejects_bad_token(monkeypatch):
     """API_MASTER_KEY 非 1 时, 错误 token 返回 403。"""
     monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
     monkeypatch.setenv("API_MASTER_KEY", "secret-real-key")
     from app.core.config import Settings
+
     saved_settings = app_main.settings
     app_main.settings = Settings()
     await app_main.provider.initialize()

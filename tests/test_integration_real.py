@@ -3,13 +3,12 @@
 CI / 离线环境无密钥时自动跳过, 不影响其它测试。
 设置 RUN_REAL_INTEGRATION=1 且 .env 有真实 key 时才运行。
 """
-import os
-import json
 
-import pytest
-from httpx import ASGITransport, AsyncClient
+import os
 
 import main as app_main
+import pytest
+from httpx import ASGITransport, AsyncClient
 
 REAL_KEY = os.environ.get("GOOGLE_API_KEY", "")
 RUN_REAL = os.environ.get("RUN_REAL_INTEGRATION") == "1"
@@ -27,11 +26,14 @@ async def test_real_en_to_zh():
     try:
         transport = ASGITransport(app=app_main.app)
         async with AsyncClient(transport=transport, base_url="http://test", timeout=30) as c:
-            r = await c.post("/v1/chat/completions", json={
-                "messages": [{"role": "user", "content": "Hello world"}],
-                "stream": False,
-                "target_lang": "zh-CN",
-            })
+            r = await c.post(
+                "/v1/chat/completions",
+                json={
+                    "messages": [{"role": "user", "content": "Hello world"}],
+                    "stream": False,
+                    "target_lang": "zh-CN",
+                },
+            )
             assert r.status_code == 200
             content = r.json()["choices"][0]["message"]["content"]
             assert any("一" <= ch <= "鿿" for ch in content), f"expected CJK, got: {content!r}"
