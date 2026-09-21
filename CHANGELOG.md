@@ -2,6 +2,15 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [1.2.1] - 2026-09-21
+
+### 修正
+- `.env.example` 补全 v1.2.0 全部新增配置项（重试/熔断/批量 deadline/限流/指标/模型别名/流式分段/缓存等）
+- `GOOGLE_API_KEY` 取值提示：去掉引号，避免把引号当 key 的一部分
+
+### 验证
+- 真实上游翻译 E2E 通过（英→中 / 中→英 / 流式 / 批量，使用有效 GOOGLE_API_KEY）
+
 ## [1.2.0] - 2026-09-21
 
 ### 新增
