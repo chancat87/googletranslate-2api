@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     )
 
     APP_NAME: str = "googletranslate-2api"
-    APP_VERSION: str = "1.4.4"
+    APP_VERSION: str = "1.5.0"
     DESCRIPTION: str = "一个将 Google Translate API 转换为兼容 OpenAI 格式的代理。"
 
     API_MASTER_KEY: str | None = None
@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     ALLOW_WEAK_API_KEY: bool = False
 
     GOOGLE_API_KEY: str | None = None
+    # 阶段 1.1: 多上游 Key 池 (逗号分隔); 未设置时回退 GOOGLE_API_KEY (向后兼容)
+    GOOGLE_API_KEYS: str | None = None
+    # Key 失败冷却 (秒): 403/429/transport 触发后进入冷却, 到期前不再优先选它
+    KEY_FAILOVER_COOLDOWN_SECONDS: int = 60
+    # 阶段 1.2: 链路摘要环形缓冲上限
+    TRACE_STORE_MAXLEN: int = 512
 
     API_REQUEST_TIMEOUT: int = 60
 

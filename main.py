@@ -328,6 +328,30 @@ async def list_models():
     return await provider.get_models()
 
 
+@app.get(
+    "/v1/traces/{request_id}",
+    dependencies=[Depends(verify_api_key)],
+    tags=["系统"],
+    summary="查询请求链路摘要 (阶段 1.2)",
+    description=(
+        "只读查询最近一次请求的链路摘要: 缓存命中 / 上游状态 / 耗时 ms / "
+        "使用的上游 Key 哈希 / 重试次数 / 熔断状态。\n"
+        "**隐私**: 只返回元数据, 不含请求原文与明文 Key。"
+    ),
+    responses={
+        401: {"model": ErrorResponse, "description": "缺少认证"},
+        403: {"model": ErrorResponse, "description": "认证失败"},
+        404: {"model": ErrorResponse, "description": "未找到该请求的链路摘要"},
+    },
+)
+async def get_trace(request_id: str):
+    """阶段 1.2: 返回链路摘要记录 (进程内环形缓冲, 上限 TRACE_STORE_MAXLEN)。"""
+    record = provider.trace_store.get(request_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="未找到该请求的链路摘要。")
+    return record
+
+
 @app.post(
     "/v1/translate/batch",
     dependencies=[Depends(verify_api_key)],

@@ -30,8 +30,10 @@ from markdownify import markdownify as md
 from app.core.cache import cache_get, cache_key, cache_put, make_cache
 from app.core.circuit_breaker import CircuitBreaker
 from app.core.config import settings
+from app.core.key_pool import KeyPool, key_hash
 from app.core.languages import auto_detect_target, is_supported
 from app.core.metrics import metrics
+from app.core.trace import TraceStore, format_trace_summary
 from app.providers.base_provider import BaseProvider
 from app.utils.sse_utils import (
     DONE_CHUNK,
@@ -48,6 +50,11 @@ _PARAGRAPH_SPLIT_RE = re.compile(r"\n\s*\n")
 
 _RETRYABLE_STATUS = (429, 500, 502, 503, 504)
 
+# 阶段 1.1: 凭证/配额类错误 -> 换 Key 重试。
+# 真实上游 (translate-pa) 对无效 key 返回 400 "API key not valid" (实测 2026-09-21),
+# 其余 401 未认证 / 403 无效 / 429 配额。
+_KEY_FAILOVER_STATUS = (400, 401, 403, 429)
+
 # P3-5: 可进入 SSE 内容的白名单 detail (其余统一为通用文案, 防未来误带上游/用户文本)
 _SSE_SAFE_DETAILS = frozenset({"翻译服务暂时不可用"})
 _TRANSPORT_ERRORS = (httpx.TransportError, httpx.TimeoutException)
@@ -62,6 +69,10 @@ class GoogleTranslateProvider(BaseProvider):
         self.client: httpx.AsyncClient | None = None
         self.cache = make_cache()
         self.circuit_breaker: CircuitBreaker | None = None
+        # 阶段 1.1: 多 Key 池 (initialize 时创建; _translate 惰性兜底)
+        self.key_pool: KeyPool | None = None
+        # 阶段 1.2: 链路摘要环形缓冲 (只存元数据, 不含原文与明文 Key)
+        self.trace_store = TraceStore(settings.TRACE_STORE_MAXLEN)
         if settings.CIRCUIT_BREAKER_ENABLED:
             self.circuit_breaker = CircuitBreaker(
                 failure_threshold=settings.CIRCUIT_FAILURE_THRESHOLD,
@@ -70,9 +81,10 @@ class GoogleTranslateProvider(BaseProvider):
             )
 
     async def initialize(self):
-        if not settings.GOOGLE_API_KEY:
-            raise ValueError("GOOGLE_API_KEY 未在 .env 文件中配置。")
-        if "在这里填入" in settings.GOOGLE_API_KEY:
+        keys = self._effective_keys()
+        if not keys:
+            raise ValueError("GOOGLE_API_KEY / GOOGLE_API_KEYS 未在 .env 文件中配置。")
+        if any("在这里填入" in k for k in keys):
             raise ValueError("GOOGLE_API_KEY 仍是示例占位符, 请填入真实 Key 后启动。")
         # 3.D.5: 显式连接池限制, 与批量并发参数匹配, 避免默认池争抢
         pool_conns = max(10, settings.BATCH_MAX_CONCURRENCY + 5)
@@ -85,6 +97,7 @@ class GoogleTranslateProvider(BaseProvider):
         )
         # 每次初始化重建缓存, 避免跨测试/重启的脏数据
         self.cache = make_cache()
+        self.key_pool = KeyPool(keys, cooldown_seconds=settings.KEY_FAILOVER_COOLDOWN_SECONDS)
         self.reset_health()
 
     async def close(self):
@@ -95,6 +108,17 @@ class GoogleTranslateProvider(BaseProvider):
         """复位熔断器 (测试隔离 / 配置变更后用)。"""
         if self.circuit_breaker:
             self.circuit_breaker.record_success()
+
+    def _effective_keys(self) -> list[str]:
+        """解析 GOOGLE_API_KEYS (逗号分隔池); 未设置时回退 GOOGLE_API_KEY (向后兼容)。"""
+        pool_raw = (settings.GOOGLE_API_KEYS or "").strip()
+        if pool_raw:
+            keys = [k.strip() for k in pool_raw.split(",") if k.strip()]
+            if keys:
+                return keys
+        # 池为空/只含分隔符时回退单 Key (向后兼容)
+        single = (settings.GOOGLE_API_KEY or "").strip()
+        return [single] if single else []
 
     # --- 主流程: 校验 -> 熔断检查 -> 翻译 -> 按 stream 决定流式 / 非流式 ---
     async def chat_completion(self, request_data: dict[str, Any]):
@@ -121,15 +145,22 @@ class GoogleTranslateProvider(BaseProvider):
     async def _non_stream_response(
         self, text: str, source_lang: str, target_lang: str, model_name: str
     ) -> JSONResponse:
+        # 阶段 1.2: 链路摘要 (非流式走 X-Trace-Summary 头 + 环形缓冲)
         request_id = f"chatcmpl-{uuid.uuid4()}"
+        trace = self._new_trace(request_id)
+        started = time.perf_counter()
         try:
-            markdown_text = await self._translate(text, source_lang, target_lang)
+            markdown_text = await self._translate(text, source_lang, target_lang, trace=trace)
             completion = create_chat_completion(request_id, model_name, markdown_text, text)
-            return JSONResponse(content=completion)
+            self._store_trace(trace, started, "success")
+            response = JSONResponse(content=completion)
+            response.headers["X-Trace-Summary"] = format_trace_summary(trace)
+            return response
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 403:
                 # P2-4: 403 是永久性凭证错误, 用独立语义暴露, 便于监控区分
                 logger.error("上游返回 403: GOOGLE_API_KEY 无效或已失效")
+                self._store_trace(trace, started, "error", error="upstream_auth_error")
                 return JSONResponse(
                     status_code=502,
                     content={
@@ -138,28 +169,35 @@ class GoogleTranslateProvider(BaseProvider):
                             "type": "upstream_auth_error",
                         }
                     },
+                    headers={"X-Trace-Summary": format_trace_summary(trace)},
                 )
             logger.error(f"上游返回非 200 (src={source_lang} tgt={target_lang})")
+            self._store_trace(trace, started, "error", error="upstream_error")
             return JSONResponse(
                 status_code=502,
                 content={"error": {"message": "翻译服务暂时不可用", "type": "upstream_error"}},
+                headers={"X-Trace-Summary": format_trace_summary(trace)},
             )
         except _TRANSPORT_ERRORS:
             logger.error(f"上游网络错误 (src={source_lang} tgt={target_lang})")
+            self._store_trace(trace, started, "error", error="upstream_network")
             return JSONResponse(
                 status_code=502,
                 content={"error": {"message": "翻译服务网络异常", "type": "upstream_error"}},
+                headers={"X-Trace-Summary": format_trace_summary(trace)},
             )
         except HTTPException:
+            self._store_trace(trace, started, "error", error="http_exception")
             raise
         except Exception:
             logger.exception("处理翻译请求时发生错误")
+            self._store_trace(trace, started, "error", error="internal_error")
             return JSONResponse(
                 status_code=500,
                 content={"error": {"message": "内部服务器错误", "type": "internal_error"}},
+                headers={"X-Trace-Summary": format_trace_summary(trace)},
             )
 
-    # --- 流式: SSE (OpenAI chat.completion.chunk 格式) ---
     def _stream_response(
         self,
         text: str,
@@ -168,10 +206,16 @@ class GoogleTranslateProvider(BaseProvider):
         model_name: str,
         include_usage: bool = False,
     ) -> StreamingResponse:
+        # 阶段 1.2: request_id 在函数级生成, 供 X-Trace-Id 响应头与链路摘要查询
+        request_id = f"chatcmpl-{uuid.uuid4()}"
+        trace = self._new_trace(request_id)
+        started = time.perf_counter()
+
         async def stream_generator() -> AsyncGenerator[bytes, None]:
-            request_id = f"chatcmpl-{uuid.uuid4()}"
             try:
-                chunks_to_send = await self._stream_translate(text, source_lang, target_lang)
+                chunks_to_send = await self._stream_translate(
+                    text, source_lang, target_lang, trace=trace
+                )
                 joined = "".join(chunks_to_send)
                 for piece in chunks_to_send:
                     chunk = create_chat_completion_chunk(request_id, model_name, piece)
@@ -183,13 +227,16 @@ class GoogleTranslateProvider(BaseProvider):
                         create_chat_completion_usage_chunk(request_id, model_name, text, joined)
                     )
                 yield DONE_CHUNK
+                self._store_trace(trace, started, "success")
             except httpx.HTTPStatusError as exc:
                 if exc.response.status_code == 403:
                     logger.error("上游返回 403: GOOGLE_API_KEY 无效或已失效")
                     err_text = "上游 API Key 无效或已失效"
+                    self._store_trace(trace, started, "error", error="upstream_auth_error")
                 else:
                     logger.error(f"上游返回非 200 (src={source_lang} tgt={target_lang})")
                     err_text = "翻译服务暂时不可用"
+                    self._store_trace(trace, started, "error", error="upstream_error")
                 error_chunk = create_chat_completion_chunk(request_id, model_name, err_text, "stop")
                 yield create_sse_data(error_chunk)
                 yield DONE_CHUNK
@@ -201,6 +248,7 @@ class GoogleTranslateProvider(BaseProvider):
                 error_chunk = create_chat_completion_chunk(request_id, model_name, detail, "stop")
                 yield create_sse_data(error_chunk)
                 yield DONE_CHUNK
+                self._store_trace(trace, started, "error", error="http_exception")
             except _TRANSPORT_ERRORS:
                 logger.error(f"上游网络错误 (src={source_lang} tgt={target_lang})")
                 error_chunk = create_chat_completion_chunk(
@@ -208,6 +256,7 @@ class GoogleTranslateProvider(BaseProvider):
                 )
                 yield create_sse_data(error_chunk)
                 yield DONE_CHUNK
+                self._store_trace(trace, started, "error", error="upstream_network")
             except Exception:
                 logger.exception("处理翻译请求时发生错误")
                 error_chunk = create_chat_completion_chunk(
@@ -215,12 +264,15 @@ class GoogleTranslateProvider(BaseProvider):
                 )
                 yield create_sse_data(error_chunk)
                 yield DONE_CHUNK
+                self._store_trace(trace, started, "error", error="internal_error")
             finally:
                 # M10: 流结束 / 客户端断开 (GeneratorExit/CancelledError 走 BaseException,
                 # 不会被子类 except Exception 吞掉) 时, 在此释放上下文并留日志。
                 logger.debug(f"stream closed (request_id={request_id})")
 
-        return StreamingResponse(stream_generator(), media_type="text/event-stream")
+        response = StreamingResponse(stream_generator(), media_type="text/event-stream")
+        response.headers["X-Trace-Id"] = request_id
+        return response
 
     @staticmethod
     def _get_include_usage(request_data: dict[str, Any]) -> bool:
@@ -238,23 +290,39 @@ class GoogleTranslateProvider(BaseProvider):
         return settings.MODEL_ALIASES.get(name, name)
 
     # --- 翻译分发: 缓存命中直接返回; 长文本可选分段 (P1.1 + P1.2 + M17) ---
-    async def _stream_translate(self, text: str, source_lang: str, target_lang: str) -> list[str]:
+    async def _stream_translate(
+        self,
+        text: str,
+        source_lang: str,
+        target_lang: str,
+        trace: dict[str, Any] | None = None,
+    ) -> list[str]:
         text = text.strip()  # 3.C.3: 仅 strip 首尾空白, 归一化缓存 key
         key = cache_key(text, source_lang, target_lang)
         cached = cache_get(self.cache, key)
         if cached is not None:
             logger.debug("cache hit")
             metrics.cache_hits.inc()
+            if trace is not None:
+                trace["cache_hit"] = True
             return [cached]
 
         metrics.cache_misses.inc()
+        if trace is not None:
+            trace["cache_hit"] = False
         # 默认整段翻译; 长文本且开启分段时分批
         if settings.STREAM_CHUNK_ENABLED and len(text) > settings.STREAM_CHUNK_THRESHOLD:
-            return await self._translate_batched(text, source_lang, target_lang)
-        whole = await self._translate(text, source_lang, target_lang)
+            return await self._translate_batched(text, source_lang, target_lang, trace=trace)
+        whole = await self._translate(text, source_lang, target_lang, trace=trace)
         return [whole] if whole else []
 
-    async def _translate_batched(self, text: str, source_lang: str, target_lang: str) -> list[str]:
+    async def _translate_batched(
+        self,
+        text: str,
+        source_lang: str,
+        target_lang: str,
+        trace: dict[str, Any] | None = None,
+    ) -> list[str]:
         """按段切分, 逐批翻译; 失败的批次以空串占位, 不中断整体。
 
         M17: 优先按空行切段 (保留段落语义); 单段文本回退为按句切分。
@@ -264,7 +332,7 @@ class GoogleTranslateProvider(BaseProvider):
         results: list[str] = []
         for seg in segments:
             try:
-                out = await self._translate(seg, source_lang, target_lang)
+                out = await self._translate(seg, source_lang, target_lang, trace=trace)
                 results.append(out or "")
             except Exception:
                 logger.warning("批次翻译失败, 跳过该段")
@@ -281,7 +349,12 @@ class GoogleTranslateProvider(BaseProvider):
 
     # --- 调用上游并清理结果 (共享给流式 / 非流式 / 批量) ---
     async def _translate(
-        self, text: str, source_lang: str, target_lang: str, record_health: bool = True
+        self,
+        text: str,
+        source_lang: str,
+        target_lang: str,
+        record_health: bool = True,
+        trace: dict[str, Any] | None = None,
     ) -> str:
         text = text.strip()  # 3.C.3: 仅 strip 首尾空白, 归一化缓存 key
         key = cache_key(text, source_lang, target_lang)
@@ -289,38 +362,95 @@ class GoogleTranslateProvider(BaseProvider):
         if cached is not None:
             logger.debug("cache hit")
             metrics.cache_hits.inc()
+            if trace is not None:
+                trace["cache_hit"] = True
             return cached
         metrics.cache_misses.inc()
+        if trace is not None:
+            trace["cache_hit"] = False
 
         if self.circuit_breaker and not self.circuit_breaker.allow():
             raise HTTPException(status_code=503, detail="翻译服务暂时不可用")
 
-        headers = self._prepare_headers()
-        payload = self._prepare_payload(text, source_lang, target_lang)
-        logger.info(f"向上游发送翻译请求: src={source_lang} tgt={target_lang}")
-        try:
-            response = await self._post_with_retry(headers, payload)
-        except _TRANSPORT_ERRORS:
-            if record_health:
-                self._record_upstream_failure("transport")
-            logger.warning(f"上游网络错误 (src={source_lang} tgt={target_lang})")
-            raise
-        if response.status_code != 200:
-            if record_health:
-                self._record_upstream_failure(str(response.status_code))
-            self._log_upstream_error(response, response.status_code)
-            raise httpx.HTTPStatusError(
-                f"上游状态码 {response.status_code}", request=response.request, response=response
+        # 阶段 1.1: 多 Key 池 — 403/429/transport 自动切换到下一 Key, 全部耗尽才失败
+        if self.key_pool is None:
+            self.key_pool = KeyPool(
+                self._effective_keys(),
+                cooldown_seconds=settings.KEY_FAILOVER_COOLDOWN_SECONDS,
             )
-        if record_health:
-            self.circuit_breaker.record_success() if self.circuit_breaker else None
+        pool = self.key_pool
+        payload = self._prepare_payload(text, source_lang, target_lang)
+        last_resp: httpx.Response | None = None
+        last_transport: BaseException | None = None
+        used_keys: list[str] = []
+        for _ in range(max(1, len(pool))):
+            gk = pool.next()
+            if gk is None or gk in used_keys:
+                break
+            used_keys.append(gk)
+            if len(used_keys) > 1:
+                metrics.key_switches.inc()
+            logger.info(
+                f"向上游发送翻译请求: src={source_lang} tgt={target_lang} key={key_hash(gk)}"
+            )
+            headers = self._prepare_headers(gk)
+            try:
+                response = await self._post_with_retry(headers, payload, trace=trace)
+            except _TRANSPORT_ERRORS as exc:
+                last_transport = exc
+                pool.mark_failed(gk)
+                metrics.errors_by_key.labels(key=key_hash(gk), code="transport").inc()
+                if record_health:
+                    self._record_upstream_failure("transport")
+                continue
+            if response.status_code in _KEY_FAILOVER_STATUS:
+                # Key 凭证/配额失效: 标记失败并切换到下一 Key
+                pool.mark_failed(gk)
+                metrics.errors_by_key.labels(key=key_hash(gk), code=str(response.status_code)).inc()
+                if record_health:
+                    self._record_upstream_failure(str(response.status_code))
+                last_resp = response
+                continue
+            if response.status_code != 200:
+                if record_health:
+                    self._record_upstream_failure(str(response.status_code))
+                metrics.errors_by_key.labels(key=key_hash(gk), code=str(response.status_code)).inc()
+                self._log_upstream_error(response, response.status_code)
+                raise httpx.HTTPStatusError(
+                    f"上游状态码 {response.status_code}",
+                    request=response.request,
+                    response=response,
+                )
+            if record_health and self.circuit_breaker:
+                self.circuit_breaker.record_success()
+            pool.mark_success(gk)
+            if trace is not None:
+                trace["used_key"] = key_hash(gk)
+                trace["upstream_status"] = response.status_code
+            markdown_text = self._clean_response(response.json())
+            if not markdown_text:
+                logger.warning("上游返回空翻译结果")
+            else:
+                cache_put(self.cache, key, markdown_text)
+            metrics.requests_by_key.labels(key=key_hash(gk), result="ok").inc()
+            self._sync_key_pool_metrics()
+            return markdown_text
 
-        markdown_text = self._clean_response(response.json())
-        if not markdown_text:
-            logger.warning("上游返回空翻译结果")
-        else:
-            cache_put(self.cache, key, markdown_text)
-        return markdown_text
+        # 全部 Key 失败: 保留最后一次响应语义, 否则抛最后一个网络错误
+        if trace is not None:
+            trace["used_key"] = key_hash(used_keys[-1]) if used_keys else None
+            trace["upstream_status"] = last_resp.status_code if last_resp is not None else None
+        if used_keys:
+            metrics.requests_by_key.labels(key=key_hash(used_keys[-1]), result="error").inc()
+        self._sync_key_pool_metrics()
+        if last_resp is not None:
+            self._log_upstream_error(last_resp, last_resp.status_code)
+            raise httpx.HTTPStatusError(
+                f"上游状态码 {last_resp.status_code}", request=last_resp.request, response=last_resp
+            )
+        if last_transport is not None:
+            raise last_transport
+        raise RuntimeError("没有可用的上游 Key")  # pragma: no cover - 防御性
 
     def _record_upstream_failure(self, code: str) -> None:
         """记录上游失败: 指标 + 告警日志 + 熔断计数 (仅 429/5xx/transport 计入熔断)。"""
@@ -338,7 +468,9 @@ class GoogleTranslateProvider(BaseProvider):
         if code == "transport" or code in ("429", "500", "502", "503", "504"):
             self.circuit_breaker.record_failure()
 
-    async def _post_with_retry(self, headers: dict[str, str], payload: Any) -> httpx.Response:
+    async def _post_with_retry(
+        self, headers: dict[str, str], payload: Any, trace: dict[str, Any] | None = None
+    ) -> httpx.Response:
         """M3: 指数退避 + 抖动重试。
 
         仅对网络异常 / 429 / 5xx 重试; 4xx (400/401/403) 不重试。
@@ -349,8 +481,10 @@ class GoogleTranslateProvider(BaseProvider):
         max_backoff = max(0.0, settings.UPSTREAM_RETRY_MAX_BACKOFF)
 
         assert self.client is not None, "provider 未初始化"
+        retries = 0
         for n in range(attempts):
             if n > 0:
+                retries += 1
                 backoff = min(base * (2 ** (n - 1)), max_backoff) + random.uniform(0, jitter)
                 # 3.D.1 验收: 重试计数入日志, 便于观测瞬时故障
                 logger.warning(f"上游重试第 {n + 1}/{attempts} 次, 退避 {backoff:.2f}s")
@@ -358,15 +492,18 @@ class GoogleTranslateProvider(BaseProvider):
             try:
                 resp = await self.client.post(self.BASE_URL, headers=headers, json=payload)
             except _TRANSPORT_ERRORS:
+                if trace is not None:
+                    trace["retries"] = retries
                 if n >= attempts - 1:
                     raise
                 continue
             if resp.status_code in _RETRYABLE_STATUS and n < attempts - 1:
                 continue
+            if trace is not None:
+                trace["retries"] = retries
             return resp
         raise httpx.TransportError("upstream unreachable")  # pragma: no cover - 防御性
 
-    # --- 批量翻译 (P2.2 + M5): 限并发, 整体 deadline, 单条失败不中断 ---
     async def translate_batch(
         self, texts: list[str], source_lang: str, target_lang: str
     ) -> list[dict[str, Any]]:
@@ -422,6 +559,44 @@ class GoogleTranslateProvider(BaseProvider):
         if isinstance(detail, str):
             return detail[:80]
         return type(exc).__name__
+
+    def _new_trace(self, request_id: str) -> dict[str, Any]:
+        """阶段 1.2: 初始化链路摘要记录 (只存元数据, 不含原文与明文 Key)。"""
+        return {
+            "request_id": request_id,
+            "cache_hit": None,
+            "used_key": None,
+            "upstream_status": None,
+            "retries": 0,
+            "circuit_open": bool(self.circuit_breaker and not self.circuit_breaker.allow()),
+            "result": None,
+            "error": None,
+            "created_at": time.time(),
+        }
+
+    def _store_trace(
+        self,
+        trace: dict[str, Any],
+        started: float,
+        result: str,
+        error: str | None = None,
+    ) -> None:
+        """阶段 1.2: 补全耗时/结果并写入环形缓冲。"""
+        trace["result"] = result
+        if error is not None:
+            trace["error"] = error
+        trace["duration_ms"] = int((time.perf_counter() - started) * 1000)
+        self.trace_store.put(trace["request_id"], trace)
+
+    def _sync_key_pool_metrics(self) -> None:
+        """阶段 2.1: 各 Key 可用/冷却状态同步到 /metrics (只暴露摘要)。"""
+        if self.key_pool is None:
+            return
+        for item in self.key_pool.status():
+            for state in ("ok", "cooldown"):
+                metrics.key_pool_status.labels(key=item["key_hash"], state=state).set(
+                    1 if item["state"] == state else 0
+                )
 
     # --- 校验与参数提取 (在进入流之前失败, 保证 HTTP 状态码语义正确) ---
     def _validate_and_extract(self, request_data: dict[str, Any]) -> tuple[str, str, str]:
@@ -516,7 +691,7 @@ class GoogleTranslateProvider(BaseProvider):
             "note": "基于字符集的轻量推断, 非 Google 官方语言检测",
         }
 
-    def _prepare_headers(self) -> dict[str, str]:
+    def _prepare_headers(self, google_api_key: str) -> dict[str, str]:
         return {
             "Accept": "*/*",
             "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
@@ -524,7 +699,7 @@ class GoogleTranslateProvider(BaseProvider):
             "Origin": "https://stackoverflow.ai",
             "Referer": "https://stackoverflow.ai/",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
-            "x-goog-api-key": settings.GOOGLE_API_KEY or "",
+            "x-goog-api-key": google_api_key or "",
         }
 
     def _prepare_payload(self, text: str, source_lang: str, target_lang: str) -> list:

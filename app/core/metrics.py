@@ -9,7 +9,7 @@ from typing import Any
 from app.core.config import settings
 
 try:
-    from prometheus_client import Counter, Histogram, generate_latest
+    from prometheus_client import Counter, Gauge, Histogram, generate_latest
 
     _HAS_PROMETHEUS = True
 except ImportError:  # pragma: no cover - 无依赖时退化为空实现
@@ -26,6 +26,9 @@ class _NullMetric:
     def observe(self, *args, **kwargs):
         return None
 
+    def set(self, *args, **kwargs):
+        return None
+
 
 class Metrics:
     """指标门面: 无 prometheus_client 时全部空操作, 不阻断功能。"""
@@ -37,6 +40,10 @@ class Metrics:
         self.cache_misses: Any
         self.translate_duration: Any
         self.rate_limited: Any
+        self.key_switches: Any
+        self.requests_by_key: Any
+        self.errors_by_key: Any
+        self.key_pool_status: Any
         if not (settings.METRICS_ENABLED and _HAS_PROMETHEUS):
             self.enabled = False
             self.translate_requests = _NullMetric()
@@ -45,6 +52,10 @@ class Metrics:
             self.cache_misses = _NullMetric()
             self.translate_duration = _NullMetric()
             self.rate_limited = _NullMetric()
+            self.key_switches = _NullMetric()
+            self.requests_by_key = _NullMetric()
+            self.errors_by_key = _NullMetric()
+            self.key_pool_status = _NullMetric()
             return
         self.enabled = True
         self.translate_requests = Counter(
@@ -55,6 +66,21 @@ class Metrics:
         self.cache_misses = Counter("cache_miss_total", "缓存未命中数")
         self.translate_duration = Histogram("translate_duration_seconds", "翻译耗时 (秒)")
         self.rate_limited = Counter("rate_limited_total", "被限流请求数", ["key_type"])
+        # 阶段 1.1/2.1: 多 Key 池切换与 Key 维度用量统计
+        self.key_switches = Counter(
+            "translate_key_switches_total", "上游 Key 切换次数 (403/429/transport 触发)"
+        )
+        self.requests_by_key = Counter(
+            "translate_requests_by_key_hash_total", "按上游 Key 哈希的翻译请求数", ["key", "result"]
+        )
+        self.errors_by_key = Counter(
+            "translate_upstream_errors_by_key_hash_total",
+            "按上游 Key 哈希的上游错误数",
+            ["key", "code"],
+        )
+        self.key_pool_status = Gauge(
+            "translate_key_pool_status", "上游 Key 池状态 (1=可用 0=冷却)", ["key", "state"]
+        )
 
     def render(self) -> bytes:
         if not self.enabled:
