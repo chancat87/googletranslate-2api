@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     )
 
     APP_NAME: str = "googletranslate-2api"
-    APP_VERSION: str = "2.1.0"
+    APP_VERSION: str = "2.1.1"
     DESCRIPTION: str = "一个将 Google Translate API 转换为兼容 OpenAI 格式的代理。"
 
     API_MASTER_KEY: str | None = None

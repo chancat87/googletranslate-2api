@@ -39,5 +39,5 @@ curl -s -X POST http://127.0.0.1:8094/v1/translate/detect -H 'Content-Type: appl
 curl -s http://127.0.0.1:8094/health
 ```
 ```
-{"status":"ok","service":"googletranslate-2api","version":"2.1.0"}
+{"status":"ok","service":"googletranslate-2api","version":"2.1.1"}
 ```

@@ -52,20 +52,28 @@ def make_cache():
     return TTLCache(maxsize=settings.CACHE_MAXSIZE, ttl=settings.CACHE_TTL)
 
 
-async def make_redis_cache():
-    """构造 Redis 共享缓存后端; 连接失败时告警并返回 None (调用方回退内存缓存)。"""
+def _default_redis_client_factory():
+    """默认构造 redis.asyncio 客户端; 延迟导入避免测试环境强制依赖真实 Redis。"""
+    import redis.asyncio as aioredis
+
+    return aioredis.from_url(
+        settings.REDIS_URL,
+        decode_responses=True,
+        socket_connect_timeout=2,
+        socket_timeout=2,
+    )
+
+
+async def make_redis_cache(client_factory=None):
+    """构造 Redis 共享缓存后端; 连接失败时告警并返回 None (调用方回退内存缓存)。
+
+    client_factory 供测试注入 fake 客户端, 默认真实 redis.asyncio.from_url。
+    """
     if not settings.CACHE_ENABLED:
         return None
     client = None
     try:
-        import redis.asyncio as aioredis
-
-        client = aioredis.from_url(
-            settings.REDIS_URL,
-            decode_responses=True,
-            socket_connect_timeout=2,
-            socket_timeout=2,
-        )
+        client = (client_factory or _default_redis_client_factory)()
         await client.ping()
     except Exception as exc:
         logger.warning(f"Redis 缓存不可用, 回退内存缓存: {exc}")

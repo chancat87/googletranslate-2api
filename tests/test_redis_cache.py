@@ -1,7 +1,5 @@
 """Redis 共享缓存后端测试 (v1.6.0): fakeredis 模拟, 无需真实 Redis 服务。"""
 
-import sys
-
 import pytest
 from app.core import cache as cache_mod
 from app.core.cache import RedisCacheBackend, make_redis_cache
@@ -79,14 +77,8 @@ async def test_provider_initialize_redis_fallback(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_make_redis_cache_success_with_fake_module(monkeypatch):
-    class _FakeAioredis:
-        @staticmethod
-        def from_url(url, **kwargs):
-            return _fake_redis()
-
-    monkeypatch.setitem(sys.modules, "redis.asyncio", _FakeAioredis())
-    backend = await make_redis_cache()
+async def test_make_redis_cache_success_with_client_factory():
+    backend = await make_redis_cache(client_factory=_fake_redis)
     assert backend is not None
     await backend.aclose()
 
