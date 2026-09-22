@@ -166,6 +166,28 @@ async def test_provider_marks_proxy_failure_on_500():
     assert ("fail", "http://p:8080", False) in fake.calls
 
 
+@pytest.mark.asyncio
+async def test_provider_rotates_proxy_on_transport_error():
+    provider = GoogleTranslateProvider()
+    fake = _FakePool()
+    provider.proxy_pool = fake
+    provider.key_pool = KeyPool(["k1"], cooldown_seconds=0)
+    provider.circuit_breaker = None
+    calls = {"post": 0}
+
+    async def _post(headers, payload, trace=None, proxy=None):
+        calls["post"] += 1
+        if calls["post"] == 1:
+            raise httpx.TransportError("boom")
+        return _fake_resp(200)
+
+    provider._post_with_retry = _post  # type: ignore[method-assign]
+    out = await provider._translate_uncached("hi", "auto", "zh-CN", True, None, "k")
+    assert out == "bonjour"
+    assert fake.calls.count("acquire") == 2
+    assert ("fail", "http://p:8080", False) in fake.calls
+
+
 def test_pool_load_file_and_invalid_file(tmp_path):
     path = tmp_path / "p.txt"
     path.write_text("1.2.3.4:8080\n# comment\nhttp://user:pass@5.6.7.8:80\n", encoding="utf-8")

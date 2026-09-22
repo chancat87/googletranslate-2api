@@ -630,19 +630,29 @@ class GoogleTranslateProvider(BaseProvider):
             )
             headers = self._prepare_headers(gk)
             proxy_pool = self.proxy_pool
-            proxy = None
-            if proxy_pool is not None and proxy_pool.enabled:
-                proxy = await proxy_pool.acquire()
-            try:
-                response = await self._post_with_retry(headers, payload, trace=trace, proxy=proxy)
-            except _TRANSPORT_ERRORS as exc:
-                if proxy is not None and proxy_pool is not None:
-                    await proxy_pool.mark_failure(proxy, rate_limited=False)
-                last_transport = exc
-                pool.mark_failed(gk)
-                metrics.errors_by_key.labels(key=key_hash(gk), code="transport").inc()
-                if record_health:
-                    self._record_upstream_failure("transport")
+            proxy_attempts = max(1, settings.PROXY_MAX_ATTEMPTS) if proxy_pool is not None else 1
+            response: httpx.Response | None = None
+            for _attempt in range(proxy_attempts):
+                proxy = None
+                if proxy_pool is not None and proxy_pool.enabled:
+                    proxy = await proxy_pool.acquire()
+                try:
+                    response = await self._post_with_retry(
+                        headers, payload, trace=trace, proxy=proxy
+                    )
+                    break
+                except _TRANSPORT_ERRORS as exc:
+                    if proxy is not None and proxy_pool is not None:
+                        await proxy_pool.mark_failure(proxy, rate_limited=False)
+                    last_transport = exc
+                    if proxy is not None and _attempt + 1 < proxy_attempts:
+                        continue
+                    pool.mark_failed(gk)
+                    metrics.errors_by_key.labels(key=key_hash(gk), code="transport").inc()
+                    if record_health:
+                        self._record_upstream_failure("transport")
+                    break
+            if response is None:
                 continue
             if response.status_code in _KEY_FAILOVER_STATUS:
                 # Key 凭证/配额失效: 标记失败并切换到下一 Key
@@ -745,6 +755,9 @@ class GoogleTranslateProvider(BaseProvider):
             request = httpx.Request("POST", self.upstream_url)
             return httpx.Response(200, request=request, json=[[f"demo:{text}"]])
         attempts = max(1, settings.UPSTREAM_RETRY_ATTEMPTS)
+        if proxy:
+            # v2.13.0: 走代理时不重复重试同一坏代理, 快速交还上层轮换
+            attempts = 1
         base = max(0.0, settings.UPSTREAM_RETRY_BACKOFF_BASE)
         jitter = max(0.0, settings.UPSTREAM_RETRY_JITTER)
         max_backoff = max(0.0, settings.UPSTREAM_RETRY_MAX_BACKOFF)
