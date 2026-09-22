@@ -2,6 +2,18 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [2.12.6] - 2026-09-22
+
+### 优化 (网关加固)
+
+- nginx 网关 `read_only` + `init` + `no-new-privileges` + `/var/cache/nginx` `/var/run` `/tmp` tmpfs + 日志轮转(10m×3) + 资源上限(64m/0.5 CPU)
+- 一次性迁移说明：网关为单实例，加固重建会有约 1s 切换窗口，迁移后升级保持零中断
+
+### 验证
+
+- compose 加固测试扩展网关断言；YAML/ruff 校验通过
+- 生产迁移实测：网关重建期间健康检查结果如实记录（见发布说明）
+
 ## [2.12.5] - 2026-09-22
 
 ### 修复 (Redis 断连自动降级)

@@ -60,6 +60,13 @@ def test_prod_compose_hardening(options=()):
     assert redis["mem_limit"] == "128m"
     assert redis["cpus"] == "0.5"
     assert "app-data" in compose.get("volumes", {})
+    gateway = compose["services"]["gateway"]
+    assert gateway["read_only"] is True
+    assert gateway["init"] is True
+    assert gateway["security_opt"] == ["no-new-privileges:true"]
+    assert "/var/cache/nginx" in gateway["tmpfs"]
+    assert gateway["mem_limit"] == "64m"
+    assert gateway["logging"]["options"]["max-size"] == "10m"
 
 
 def test_dockerfile_multi_stage_and_hardening():
