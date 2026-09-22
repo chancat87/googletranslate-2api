@@ -2,6 +2,18 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [2.12.5] - 2026-09-22
+
+### 修复 (Redis 断连自动降级)
+
+- `_cache_get/_cache_put` 增加 Redis 异常兜底：断连/超时/连接池错误时降级内存缓存，不再 500
+- 触发来源：v2.12.4 生产重建 redis 后暴露的真实 P1（README 承诺“Redis 不可用自动回退内存”，实现未覆盖运行时断连）
+
+### 验证
+
+- 新增 `_BrokenRedis` 断连测试：读写自动回退内存且不抛异常
+- 生产复测：redis 重启瞬间翻译请求仍 200（见本版发布说明）
+
 ## [2.12.4] - 2026-09-22
 
 ### 优化 (容器与数据库)

@@ -1,15 +1,27 @@
 """Redis 共享缓存后端测试 (v1.6.0): fakeredis 模拟, 无需真实 Redis 服务。"""
 
 import pytest
+import redis
 from app.core import cache as cache_mod
 from app.core.cache import RedisCacheBackend, make_redis_cache
 from app.providers import googletranslate_provider as provider_mod
 from app.providers.googletranslate_provider import GoogleTranslateProvider
+from cachetools import TTLCache
 from fakeredis import aioredis as fakeredis_aioredis
 
 
 def _fake_redis():
     return fakeredis_aioredis.FakeRedis(decode_responses=True)
+
+
+class _BrokenRedis:
+    """模拟 Redis 运行中断连: 所有命令直接抛 ConnectionError。"""
+
+    async def get(self, key):
+        raise redis.exceptions.ConnectionError("boom")
+
+    async def set(self, *args, **kwargs):
+        raise redis.exceptions.ConnectionError("boom")
 
 
 @pytest.mark.asyncio
@@ -64,6 +76,18 @@ async def test_provider_cache_methods_memory_fallback():
     assert await provider._cache_get("k") is None
     await provider._cache_put("k", "v")
     assert await provider._cache_get("k") == "v"
+
+
+@pytest.mark.asyncio
+async def test_provider_cache_redis_failure_falls_back_to_memory():
+    """v2.12.4: Redis 断连时读写自动降级内存缓存, 不抛 500。"""
+    provider = GoogleTranslateProvider()
+    provider.redis_cache = RedisCacheBackend(_BrokenRedis(), "g2api:", 60)
+    provider.cache = TTLCache(maxsize=100, ttl=60)
+    cache_mod.cache_put(provider.cache, "k", "mem")
+    assert await provider._cache_get("k") == "mem"
+    await provider._cache_put("k2", "v2")
+    assert await provider._cache_get("k2") == "v2"
 
 
 @pytest.mark.asyncio

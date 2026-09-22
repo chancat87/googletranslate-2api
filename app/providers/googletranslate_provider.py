@@ -155,7 +155,11 @@ class GoogleTranslateProvider(BaseProvider):
     async def _cache_get(self, key: str) -> str | None:
         """统一缓存读: Redis 后端异步读, 内存后端同步读 (v1.6.0)。"""
         if self.redis_cache is not None:
-            return await self.redis_cache.get(key)
+            try:
+                return await self.redis_cache.get(key)
+            except Exception as exc:
+                # v2.12.4: Redis 断连/超时时降级内存缓存, 不阻断翻译
+                logger.warning(f"Redis 缓存读失败, 降级内存缓存: {exc}")
         return cache_get(self.cache, key)
 
     async def _cache_put(self, key: str, value: str) -> None:
@@ -163,8 +167,12 @@ class GoogleTranslateProvider(BaseProvider):
         if not value:
             return
         if self.redis_cache is not None:
-            await self.redis_cache.set(key, value)
-            return
+            try:
+                await self.redis_cache.set(key, value)
+                return
+            except Exception as exc:
+                # v2.12.4: Redis 断连/超时时降级内存缓存, 不阻断翻译
+                logger.warning(f"Redis 缓存写失败, 降级内存缓存: {exc}")
         cache_put(self.cache, key, value)
 
     def _singleflight_lock(self, key: str) -> asyncio.Lock:
