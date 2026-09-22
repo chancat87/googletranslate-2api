@@ -16,7 +16,7 @@ from app.core.rate_limit import RateLimiter
 from app.providers.googletranslate_provider import GoogleTranslateProvider
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, WebSocket
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -514,6 +514,14 @@ def _web_ui() -> HTMLResponse:
     return HTMLResponse(path.read_text(encoding="utf-8"))
 
 
+_FAVICON_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
+    '<rect width="32" height="32" rx="7" fill="#0f766e"/>'
+    '<text x="16" y="23" font-size="17" font-family="Segoe UI, Microsoft YaHei, sans-serif" '
+    'text-anchor="middle" fill="#fff">译</text></svg>'
+)
+
+
 @app.get("/app", include_in_schema=False)
 async def app_ui():
     """Web UI 前端入口 (v2.5.0)。"""
@@ -524,6 +532,18 @@ async def app_ui():
 async def admin_ui():
     """兼容入口: v2.0.0 起为管理面板, v2.5.0 起与 /app 共用同一套 UI。"""
     return _web_ui()
+
+
+@app.get("/favicon.svg", include_in_schema=False)
+async def favicon_svg():
+    """本地 SVG favicon, 避免浏览器 404。"""
+    return Response(content=_FAVICON_SVG, media_type="image/svg+xml")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon_ico():
+    """兼容入口: 旧浏览器请求 favicon.ico 时指向 SVG favicon。"""
+    return RedirectResponse(url="/favicon.svg")
 
 
 @app.websocket("/v1/ws/translate")
@@ -581,7 +601,11 @@ async def ws_translate(websocket: WebSocket):
 
 # --- API 路由 ---
 @app.get("/", summary="根路径", tags=["系统"], include_in_schema=False)
-def root():
+async def root(request: Request):
+    """根路径: 浏览器打开直接进入 Web UI; API 客户端仍返回 JSON 欢迎信息。"""
+    accept = (request.headers.get("accept") or "").lower()
+    if "text/html" in accept:
+        return _web_ui()
     return {"message": f"欢迎来到 {settings.APP_NAME} v{settings.APP_VERSION}. 服务运行正常。"}
 
 

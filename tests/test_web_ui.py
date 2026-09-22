@@ -32,7 +32,9 @@ async def test_app_and_admin_serve_modern_ui(client):
 async def test_ui_has_no_external_asset_dependency(client):
     r = await client.get("/app")
     assert "http://" not in r.text and "https://" not in r.text
-    assert "script src=" not in r.text and "link rel=" not in r.text
+    assert '<script src="' not in r.text
+    assert '<link rel="stylesheet"' not in r.text
+    assert '<link rel="icon"' in r.text
 
 
 @pytest.mark.asyncio

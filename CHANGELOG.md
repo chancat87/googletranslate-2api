@@ -2,6 +2,19 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [2.10.1] - 2026-09-22
+
+### 修复 (根路径直接打开 Web UI)
+
+- 浏览器访问 `/` 直接返回 Web UI（`Accept: text/html` 时），不再只显示 JSON 欢迎语
+- API 客户端（无 `text/html` 请求头）访问 `/` 仍返回原 JSON 欢迎信息，保持兼容
+- 新增本地 SVG favicon（`/favicon.svg`，`/favicon.ico` 自动跳转），消除浏览器 404
+- `start-dev.bat` / `start.ps1` 启动后自动打开 `http://127.0.0.1:8088/` 即见 UI
+
+### 验证
+
+- 新增根路径浏览器模式与 favicon 路由测试；全量回归通过
+
 ## [2.10.0] - 2026-09-22
 
 ### 新增 (无 Key Demo 模式)

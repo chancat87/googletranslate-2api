@@ -53,6 +53,25 @@ async def test_root(client):
 
 
 @pytest.mark.asyncio
+async def test_root_serves_web_ui_for_browser(client):
+    r = await client.get("/", headers={"accept": "text/html"})
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/html")
+    assert "googletranslate-2api" in r.text
+    assert "管理面板" in r.text
+
+
+@pytest.mark.asyncio
+async def test_favicon_routes(client):
+    r = await client.get("/favicon.svg")
+    assert r.status_code == 200
+    assert "image/svg+xml" in r.headers["content-type"]
+    assert "svg" in r.text
+    r = await client.get("/favicon.ico", follow_redirects=False)
+    assert r.status_code in (200, 307, 308)
+
+
+@pytest.mark.asyncio
 async def test_health(client):
     r = await client.get("/health")
     assert r.status_code == 200
