@@ -2,6 +2,18 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [2.13.1] - 2026-09-22
+
+### 修复 (代理池类型收窄)
+
+- `ProxyPool.add_many` 参数改为 `Sequence[str | None]` 修复 mypy 协变报错
+- provider 请求循环用局部 `proxy_pool` 引用并显式判空，修复 5 处 mypy `union-attr` 报错
+- 本次为 CI 门禁修复，功能与 v2.13.0 一致
+
+### 验证
+
+- mypy 0 错误；ruff 全过；代理池/单飞 25 项测试通过；全量回归维持 334 passed / 1 skipped，覆盖率 98.33%
+
 ## [2.13.0] - 2026-09-22
 
 ### 新增 (代理池轮换)

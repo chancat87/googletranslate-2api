@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Sequence
 from urllib.parse import urlsplit
 
 import httpx
@@ -136,7 +137,7 @@ class ProxyPool:
             return 0
         return self.add_many([normalize_proxy_url(x) for x in lines], source="residential")
 
-    def add_many(self, urls: list[str | None], source: str) -> int:
+    def add_many(self, urls: Sequence[str | None], source: str) -> int:
         seen = {e.url for e in self.entries}
         added = 0
         for u in urls:

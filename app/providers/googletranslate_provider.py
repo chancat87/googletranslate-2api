@@ -629,14 +629,15 @@ class GoogleTranslateProvider(BaseProvider):
                 f"向上游发送翻译请求: src={source_lang} tgt={target_lang} key={key_hash(gk)}"
             )
             headers = self._prepare_headers(gk)
+            proxy_pool = self.proxy_pool
             proxy = None
-            if self.proxy_pool is not None and self.proxy_pool.enabled:
-                proxy = await self.proxy_pool.acquire()
+            if proxy_pool is not None and proxy_pool.enabled:
+                proxy = await proxy_pool.acquire()
             try:
                 response = await self._post_with_retry(headers, payload, trace=trace, proxy=proxy)
             except _TRANSPORT_ERRORS as exc:
-                if proxy:
-                    await self.proxy_pool.mark_failure(proxy, rate_limited=False)
+                if proxy is not None and proxy_pool is not None:
+                    await proxy_pool.mark_failure(proxy, rate_limited=False)
                 last_transport = exc
                 pool.mark_failed(gk)
                 metrics.errors_by_key.labels(key=key_hash(gk), code="transport").inc()
@@ -645,10 +646,8 @@ class GoogleTranslateProvider(BaseProvider):
                 continue
             if response.status_code in _KEY_FAILOVER_STATUS:
                 # Key 凭证/配额失效: 标记失败并切换到下一 Key
-                if proxy:
-                    await self.proxy_pool.mark_failure(
-                        proxy, rate_limited=response.status_code == 429
-                    )
+                if proxy is not None and proxy_pool is not None:
+                    await proxy_pool.mark_failure(proxy, rate_limited=response.status_code == 429)
                 pool.mark_failed(gk)
                 metrics.errors_by_key.labels(key=key_hash(gk), code=str(response.status_code)).inc()
                 if record_health:
@@ -656,8 +655,8 @@ class GoogleTranslateProvider(BaseProvider):
                 last_resp = response
                 continue
             if response.status_code != 200:
-                if proxy:
-                    await self.proxy_pool.mark_failure(proxy, rate_limited=False)
+                if proxy is not None and proxy_pool is not None:
+                    await proxy_pool.mark_failure(proxy, rate_limited=False)
                 if record_health:
                     self._record_upstream_failure(str(response.status_code))
                 metrics.errors_by_key.labels(key=key_hash(gk), code=str(response.status_code)).inc()
@@ -670,8 +669,8 @@ class GoogleTranslateProvider(BaseProvider):
             if record_health and self.circuit_breaker:
                 self.circuit_breaker.record_success()
             pool.mark_success(gk)
-            if proxy:
-                await self.proxy_pool.mark_success(proxy)
+            if proxy is not None and proxy_pool is not None:
+                await proxy_pool.mark_success(proxy)
             if trace is not None:
                 trace["used_key"] = key_hash(gk)
                 trace["upstream_status"] = response.status_code
