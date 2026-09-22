@@ -42,7 +42,7 @@ services:
       start_period: 5s
       retries: 3
     mem_limit: 800m
-    cpus: "2.0"
+    cpus: "${APP_CPUS:-1.0}"
     stop_grace_period: 35s
     networks:
       - googletranslate-prod-net
@@ -69,7 +69,7 @@ services:
       start_period: 5s
       retries: 3
     mem_limit: 800m
-    cpus: "2.0"
+    cpus: "${APP_CPUS:-1.0}"
     stop_grace_period: 35s
     networks:
       - googletranslate-prod-net

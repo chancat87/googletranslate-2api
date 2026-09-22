@@ -2,6 +2,17 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [2.12.1] - 2026-09-22
+
+### 修复 (蓝绿 compose 兼容单核服务器)
+
+- `docker-compose.prod.yml` 的 `cpus` 改为 `APP_CPUS` 环境变量（默认 1.0），单核 Debian 12 服务器可直接 `docker compose up -d`，不再报 `Range of CPUs is from 0.01 to 1.00`
+- 实测：1 核 1.7G 服务器蓝绿双副本 + nginx 网关部署成功，压测 0 错 0 429，重启单副本期间 30/30 健康检查 200
+
+### 验证
+
+- YAML 校验通过；部署配置测试继续通过
+
 ## [2.12.0] - 2026-09-22
 
 ### 新增 (单机零中断热更新)
