@@ -1,0 +1,22 @@
+{
+  "mode": "cache",
+  "rows": [
+    {
+      "concurrency": 1000,
+      "total": 1000,
+      "ok": 1000,
+      "err": 0,
+      "r429": 0,
+      "qps": 32.2,
+      "wall_s": 31.097,
+      "p50_ms": 18094.1,
+      "p95_ms": 29215.6,
+      "p99_ms": 30385.4,
+      "mean_ms": 17339.8,
+      "status": {
+        "200": 1000
+      },
+      "stopped_early": false
+    }
+  ]
+}
