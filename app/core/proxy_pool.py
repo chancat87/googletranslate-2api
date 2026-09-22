@@ -81,6 +81,7 @@ class ProxyEntry:
         "source",
         "url",
         "use_count",
+        "validated",
     )
 
     def __init__(self, url: str, source: str = "residential") -> None:
@@ -94,6 +95,7 @@ class ProxyEntry:
         self.consecutive_fails = 0
         self.health_score = 1.0
         self.last_success_ts = 0.0
+        self.validated = False
 
     def available(self, now: float) -> bool:
         if now < self.cooldown_until:
@@ -116,6 +118,7 @@ class ProxyEntry:
             "cooldown_seconds": max(0, int(self.cooldown_until - now)),
             "fails": self.consecutive_fails,
             "health_score": round(self.health_score, 3),
+            "validated": self.validated,
         }
 
 
@@ -143,7 +146,9 @@ class ProxyPool:
         for u in urls:
             if not u or u in seen:
                 continue
-            self.entries.append(ProxyEntry(u, source=source))
+            entry = ProxyEntry(u, source=source)
+            entry.validated = source == "residential"
+            self.entries.append(entry)
             seen.add(u)
             added += 1
         if added:
@@ -170,6 +175,10 @@ class ProxyPool:
         async with self._lock:
             now = time.time()
             candidates = [e for e in self.entries if e.available(now)]
+            if settings.PROXY_PREFER_VALIDATED:
+                validated = [e for e in candidates if e.validated or e.source == "residential"]
+                if validated:
+                    candidates = validated
             if prefer_source:
                 pref = [e for e in candidates if e.source == prefer_source]
                 if pref:
@@ -211,6 +220,23 @@ class ProxyPool:
                     metrics.proxy_results.labels(source=e.source, result="ok").inc()
                     return
 
+    async def mark_validated(self, url: str, ok: bool) -> None:
+        """校验结果回填: 通过则 validated=True 且健康分上调, 失败也标记已校验(不再兜底优先)。"""
+        async with self._lock:
+            for e in self.entries:
+                if e.url == url:
+                    e.validated = True
+                    if ok:
+                        e.consecutive_fails = 0
+                        e.health_score = 0.7 * e.health_score + 0.3
+                        e.last_success_ts = time.time()
+                        metrics.proxy_results.labels(source=e.source, result="ok").inc()
+                    else:
+                        e.consecutive_fails += 1
+                        e.health_score = 0.7 * e.health_score
+                        metrics.proxy_results.labels(source=e.source, result="fail").inc()
+                    return
+
     def snapshot(self, page: int = 1, page_size: int = 20) -> dict:
         now = time.time()
         total = len(self.entries)
@@ -247,10 +273,7 @@ async def validate_proxy(url: str) -> bool:  # pragma: no cover - 网络校验, 
 
 async def _validate_and_mark(pool: ProxyPool, url: str) -> None:  # pragma: no cover - 网络校验
     ok = await validate_proxy(url)
-    if ok:
-        await pool.mark_success(url)
-    else:
-        await pool.mark_failure(url, rate_limited=False)
+    await pool.mark_validated(url, ok)
 
 
 async def free_proxy_fetcher_loop(

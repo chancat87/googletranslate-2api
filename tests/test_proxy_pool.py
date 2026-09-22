@@ -63,6 +63,23 @@ async def test_pool_rotation_cooldown_and_health():
 
 
 @pytest.mark.asyncio
+async def test_pool_prefers_validated_free_proxy():
+    pool = ProxyPool()
+    pool.add_many(["http://a:80", "http://b:80"], source="free")
+    await pool.mark_validated("http://b:80", True)
+    assert await pool.acquire() == "http://b:80"
+    by_url = {i["url"]: i for i in pool.snapshot()["items"]}
+    assert by_url["b:80"]["validated"] is True
+
+    pool2 = ProxyPool()
+    pool2.add_many(["http://c:80"], source="free")
+    await pool2.mark_validated("http://c:80", False)
+    item = pool2.snapshot()["items"][0]
+    assert item["validated"] is True
+    assert item["health_score"] < 1.0
+
+
+@pytest.mark.asyncio
 async def test_pool_snapshot_redacts_credentials():
     pool = ProxyPool()
     pool.add_many(["http://user:secret@10.0.0.1:3128"], source="residential")

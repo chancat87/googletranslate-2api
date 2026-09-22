@@ -36,6 +36,7 @@ Google 上游会按出口 IP 限制高并发。多 Key 只能解决“Key 维度
 | `PROXY_VALIDATE_CONCURRENCY` | 10 | 免费代理校验并发（分批，防 1 核启动被拖垮） |
 | `PROXY_VALIDATE_SAMPLE` | 200 | 每轮最多校验的免费代理数 |
 | `PROXY_VALIDATE_PACE` | 0.02 | 校验批次间隔秒数 |
+| `PROXY_PREFER_VALIDATED` | true | 优先使用已校验通过的代理；校验失败代理只做兜底 |
 | `PROXY_CONNECT_TIMEOUT` | 8.0 | 走代理的连接超时 |
 | `PROXY_REQUEST_TIMEOUT` | 10.0 | 走代理的整体请求超时（免费代理慢，设短值快速换下一个） |
 | `PROXY_MAX_INFLIGHT` | 50 | 代理请求并发上限，0=不限 |

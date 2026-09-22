@@ -2,6 +2,19 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [2.13.5] - 2026-09-22
+
+### 优化 (校验优先代理分配)
+
+- 新增 `PROXY_PREFER_VALIDATED`（默认 true）：优先使用已校验通过的代理，避免未校验坏代理抢占轮换名额
+- `ProxyEntry.validated` 状态与 `mark_validated` 回填；校验失败代理也标记为已校验，仅作兜底
+- 快照暴露 `validated` 字段，便于观测校验覆盖
+
+### 验证
+
+- 新增校验优先单测；mypy / ruff 通过；代理池 19 项测试通过
+- 生产压测对比见发布说明（目标：提升代理模式成功率与 QPS）
+
 ## [2.13.4] - 2026-09-22
 
 ### 优化 (免费代理校验限流)
