@@ -2,6 +2,17 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [2.12.2] - 2026-09-22
+
+### 新增 (生产部署验收与审计)
+
+- 新增 `docs/PRODUCTION_AUDIT_2026-09-22.md`：生产环境、验收清单、审计结论与运维手册
+- 生产实测结论：公网健康/就绪/翻译/SSE 全过，压测 0 错 0 429，热升级与回滚期间 60/60 健康检查 200
+
+### 验证
+
+- 全量回归 308 passed / 1 skipped，覆盖率 98.94%；CI / Deploy 全绿
+
 ## [2.12.1] - 2026-09-22
 
 ### 修复 (蓝绿 compose 兼容单核服务器)
