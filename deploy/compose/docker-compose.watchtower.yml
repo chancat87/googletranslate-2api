@@ -1,0 +1,19 @@
+name: googletranslate-2api-watchtower
+
+# 可选: 自动更新器 (与 new-api 方案一致)
+# 只更新带 com.centurylinklabs.watchtower.enable=true 标签的容器,
+# 双 app 副本会在 nginx 蓝绿网关后逐个滚动重建, 服务不中断。
+# 用法: docker compose -f deploy/compose/docker-compose.watchtower.yml up -d
+services:
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: googletranslate-2api-watchtower
+    restart: always
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_POLL_INTERVAL=${WATCHTOWER_POLL_INTERVAL:-86400}
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_LABEL_ENABLE=true
+      - WATCHTOWER_REVIVE_STOPPED=true
+      - TZ=Asia/Shanghai

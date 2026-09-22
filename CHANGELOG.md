@@ -2,6 +2,21 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [2.12.0] - 2026-09-22
+
+### 新增 (单机零中断热更新)
+
+- 新增生产 compose `deploy/compose/docker-compose.prod.yml`：nginx 蓝绿网关 + `app-blue` / `app-green` 双副本 + redis，升级时一次只重建一个副本
+- nginx 蓝绿配置 `deploy/compose/nginx-bluegreen.conf`：双 upstream + `proxy_next_upstream` 自动重试，任一副本重建期间服务不中断
+- 新增 `deploy/upgrade.sh`：滚动升级/回滚脚本，逐副本重建并等待 `/ready` 就绪
+- 新增可选 Watchtower 自动更新 `deploy/compose/docker-compose.watchtower.yml`，只更新带标签的 app 副本（与 new-api 方案一致）
+- 新增 `docs/HOT_UPDATE.md`：现状、架构、升级/回滚/自动更新用法与故障排查
+
+### 验证
+
+- 新增 4 项部署配置测试：双副本结构、蓝绿 nginx 重试、Watchtower 标签范围、升级脚本滚动逻辑
+- YAML / bash 语法校验通过；文档死链检查通过
+
 ## [2.11.1] - 2026-09-22
 
 ### 修复 (Deploy 版本解析兼容 Python 3.10)

@@ -1,0 +1,45 @@
+"""单机零中断部署配置验收 (v2.12.0): 双 app 副本 + nginx 蓝绿网关 + Watchtower。"""
+
+from pathlib import Path
+
+import yaml
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def _load_yaml(rel: str) -> dict:
+    return yaml.safe_load((ROOT / rel).read_text(encoding="utf-8"))
+
+
+def test_prod_compose_has_dual_app_replicas_and_gateway():
+    compose = _load_yaml("deploy/compose/docker-compose.prod.yml")
+    services = compose["services"]
+    assert {"gateway", "app-blue", "app-green", "redis"} <= set(services)
+    assert services["gateway"]["depends_on"]["app-blue"]["condition"] == "service_started"
+    assert services["gateway"]["depends_on"]["app-green"]["condition"] == "service_started"
+    for svc in ("app-blue", "app-green"):
+        assert services[svc]["stop_grace_period"] == "35s"
+        assert services[svc]["healthcheck"]
+        assert services[svc]["labels"]["com.centurylinklabs.watchtower.enable"] == "true"
+
+
+def test_bluegreen_nginx_retries_other_upstream():
+    conf = (ROOT / "deploy/compose/nginx-bluegreen.conf").read_text(encoding="utf-8")
+    assert "server app-blue:8000;" in conf
+    assert "server app-green:8000;" in conf
+    assert "proxy_next_upstream error timeout http_502 http_503 http_504;" in conf
+    assert "proxy_next_upstream_tries 2;" in conf
+
+
+def test_watchtower_compose_uses_label_scope():
+    compose = _load_yaml("deploy/compose/docker-compose.watchtower.yml")
+    env = " ".join(compose["services"]["watchtower"]["environment"])
+    assert "WATCHTOWER_LABEL_ENABLE=true" in env
+    assert "WATCHTOWER_CLEANUP=true" in env
+
+
+def test_upgrade_script_rolls_both_replicas():
+    script = (ROOT / "deploy/upgrade.sh").read_text(encoding="utf-8")
+    assert "app-blue" in script and "app-green" in script
+    assert "--force-recreate" in script
+    assert "wait_ready" in script

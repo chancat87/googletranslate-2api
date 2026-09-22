@@ -1,0 +1,95 @@
+name: googletranslate-2api-prod
+
+# 单机零中断部署: nginx gateway + 双 app 副本(蓝绿滚动) + redis
+# 升级时一次只重建一个 app 副本, nginx 会重试到另一个副本, 服务不中断。
+# 用法:
+#   APP_IMAGE=ghcr.io/lza6/googletranslate-2api:v2.12.0 docker compose -f deploy/compose/docker-compose.prod.yml up -d
+#   滚动升级: ./deploy/upgrade.sh ghcr.io/lza6/googletranslate-2api:v2.12.0
+services:
+  gateway:
+    image: nginx:1.27-alpine
+    container_name: googletranslate-2api-gateway
+    restart: always
+    ports:
+      - "${NGINX_PORT:-8088}:80"
+    volumes:
+      - ./nginx-bluegreen.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      app-blue:
+        condition: service_started
+      app-green:
+        condition: service_started
+    networks:
+      - googletranslate-prod-net
+
+  app-blue:
+    image: "${APP_IMAGE:-ghcr.io/lza6/googletranslate-2api:latest}"
+    container_name: googletranslate-2api-app-blue
+    restart: unless-stopped
+    env_file:
+      - ../../.env
+    environment:
+      APP_WORKERS: "${APP_WORKERS:-2}"
+      CACHE_BACKEND: "${CACHE_BACKEND:-redis}"
+      REDIS_URL: "${REDIS_URL:-redis://redis:6379/0}"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=2)"]
+      interval: 30s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+    mem_limit: 800m
+    cpus: "2.0"
+    stop_grace_period: 35s
+    networks:
+      - googletranslate-prod-net
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+
+  app-green:
+    image: "${APP_IMAGE:-ghcr.io/lza6/googletranslate-2api:latest}"
+    container_name: googletranslate-2api-app-green
+    restart: unless-stopped
+    env_file:
+      - ../../.env
+    environment:
+      APP_WORKERS: "${APP_WORKERS:-2}"
+      CACHE_BACKEND: "${CACHE_BACKEND:-redis}"
+      REDIS_URL: "${REDIS_URL:-redis://redis:6379/0}"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=2)"]
+      interval: 30s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+    mem_limit: 800m
+    cpus: "2.0"
+    stop_grace_period: 35s
+    networks:
+      - googletranslate-prod-net
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+
+  redis:
+    image: redis:7-alpine
+    container_name: googletranslate-2api-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "no", "--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 2s
+      start_period: 3s
+      retries: 5
+    networks:
+      - googletranslate-prod-net
+
+networks:
+  googletranslate-prod-net:
+    driver: bridge

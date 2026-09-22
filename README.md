@@ -44,6 +44,7 @@
 *   **🩺 Key 自检 (v2.9.0)**：`POST /v1/admin/keys/probe` + Web UI 一键验证批量 Key 有效性
 *   **🧪 无 Key Demo 模式 (v2.10.0)**：`DEMO_MODE=true` 无需真实 Key 即可启动试用，返回 `demo:` 结果
 *   **🚀 完整 CI/CD (v2.11.0)**：GitHub Actions 质量门禁 + staging/production 部署 + 一键回滚 + Slack 通知，见 [`docs/CI_CD_PIPELINE.md`](docs/CI_CD_PIPELINE.md)
+*   **♻️ 热更新零中断 (v2.12.0)**：nginx 蓝绿网关 + 双 app 副本滚动升级 + 可选 Watchtower 自动更新，单机升级不中断服务，见 [`docs/HOT_UPDATE.md`](docs/HOT_UPDATE.md)
 *   **🛡️ 规范化错误处理**：统一状态码与错误响应格式，含健康检查端点
 *   **🔓 完全开源**：代码透明，易于理解和扩展
 
