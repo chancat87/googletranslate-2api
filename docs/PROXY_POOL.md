@@ -1,4 +1,4 @@
-# 代理池轮换 (v2.13.0)
+# 代理池轮换 (v2.13.6)
 
 ## 1. 解决的问题
 
@@ -8,11 +8,11 @@ Google 上游会按出口 IP 限制高并发。多 Key 只能解决“Key 维度
 ## 2. 架构
 
 ```text
-上游请求 -> ProxyPool.acquire()
-         -> 优先未用过 IP -> 全部用过按 health_score 降序 + 冷却最早结束
-         -> httpx.AsyncClient(proxy=url) 请求 translate-pa.googleapis.com
-成功 -> mark_success(健康分上升)
-429/网络失败 -> mark_failure(递增冷却 + 健康分下降) -> KeyPool 切下一 Key 重试
+上游请求:
+  1. 先本机服务器出口直连 (无代理)
+  2. 直连 429/网络失败/5xx -> ProxyPool.acquire() 取最低延迟健康代理
+  3. 代理失败 -> mark_failure(PROXY_RETEST_SECONDS=1s 冷却) -> 再试本机 -> 再换下一个代理
+  4. 哪个先成功用哪个; 成功 -> mark_success(记录延迟 EWMA, 粘滞复用)
 ```
 
 双源：
@@ -29,8 +29,8 @@ Google 上游会按出口 IP 限制高并发。多 Key 只能解决“Key 维度
 | `PROXY_FREE_FETCH` | false | 是否后台抓取免费代理 |
 | `PROXY_FREE_REFRESH_SECONDS` | 600 | 抓取/校验周期 |
 | `PROXY_FREE_URLS` | 内置 3 源 | 逗号分隔列表 URL |
-| `PROXY_MAX_USE_PER_DAY` | 200 | 每代理每日最大使用次数 |
-| `PROXY_USE_COOLDOWN_MAP` | `0,10,30,90,300` | 递增冷却秒数 |
+| `PROXY_MAX_ATTEMPTS` | 3 | 直连失败后最多逐个换几个代理 |
+| `PROXY_RETEST_SECONDS` | 1.0 | 代理失败后重试冷却，到点重新测延迟/可用性 |
 | `PROXY_VALIDATE_URL` | `https://www.gstatic.com/generate_204` | 健康校验目标 |
 | `PROXY_VALIDATE_TIMEOUT` | 5.0 | 单代理校验超时 |
 | `PROXY_VALIDATE_CONCURRENCY` | 10 | 免费代理校验并发（分批，防 1 核启动被拖垮） |

@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     )
 
     APP_NAME: str = "googletranslate-2api"
-    APP_VERSION: str = "2.13.5"
+    APP_VERSION: str = "2.13.6"
     DESCRIPTION: str = "一个将 Google Translate API 转换为兼容 OpenAI 格式的代理。"
 
     API_MASTER_KEY: str | None = None
@@ -124,10 +124,8 @@ class Settings(BaseSettings):
     PROXY_FREE_REFRESH_SECONDS: int = 600
     # 逗号分隔的免费代理列表 URL, 留空用内置默认源
     PROXY_FREE_URLS: str = ""
-    # 每个代理每日最大使用次数, 0=不限
-    PROXY_MAX_USE_PER_DAY: int = 200
-    # 递增冷却秒数 (第1..N次使用后), 逗号分隔
-    PROXY_USE_COOLDOWN_MAP: str = "0,10,30,90,300"
+    # 代理失败后重试冷却 (秒): 到点后重新测延迟/可用性, 可用则回池
+    PROXY_RETEST_SECONDS: float = 1.0
     # 同一 Key 失败后最多换多少个代理再切 Key (0=直连/不启用)
     PROXY_MAX_ATTEMPTS: int = 3
     # 代理健康校验目标 (短超时, 不消耗翻译配额)

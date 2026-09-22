@@ -66,6 +66,8 @@ _RETRYABLE_STATUS = (429, 500, 502, 503, 504)
 # 真实上游 (translate-pa) 对无效 key 返回 400 "API key not valid" (实测 2026-09-21),
 # 其余 401 未认证 / 403 无效 / 429 配额。
 _KEY_FAILOVER_STATUS = (400, 401, 403, 429)
+# v2.13.6: 本机/当前代理遇到这些状态视为不可用, 切下一个出口再试
+_PROXY_SWITCH_STATUS = (429, 500, 502, 503, 504)
 
 # P3-5: 可进入 SSE 内容的白名单 detail (其余统一为通用文案, 防未来误带上游/用户文本)
 _SSE_SAFE_DETAILS = frozenset({"翻译服务暂时不可用"})
@@ -635,12 +637,26 @@ class GoogleTranslateProvider(BaseProvider):
             )
             headers = self._prepare_headers(gk)
             proxy_pool = self.proxy_pool
-            proxy_attempts = max(1, settings.PROXY_MAX_ATTEMPTS) if proxy_pool is not None else 1
+            proxy_attempts = max(1, settings.PROXY_MAX_ATTEMPTS) if proxy_pool is not None else 0
+            # 顺序: 本机直连 -> 最低延迟代理1 -> 本机 -> 代理2 -> 本机 -> ... -> 代理N
+            attempts: list[str | None] = [None]
+            for _ in range(proxy_attempts):
+                attempts.append("PROXY")
+                attempts.append(None)
+            if len(attempts) > 1 and attempts[-1] is None:
+                attempts.pop()
             response: httpx.Response | None = None
-            for _attempt in range(proxy_attempts):
-                proxy = None
-                if proxy_pool is not None and proxy_pool.enabled:
+            last_switch: httpx.Response | None = None
+            started = time.monotonic()
+            for plan in attempts:
+                proxy: str | None = None
+                if plan == "PROXY":
+                    if proxy_pool is None or not proxy_pool.enabled:
+                        continue
                     proxy = await proxy_pool.acquire()
+                    if proxy is None:
+                        continue
+                started = time.monotonic()
                 try:
                     if proxy is not None and self._proxy_sem is not None:
                         async with self._proxy_sem:
@@ -651,20 +667,34 @@ class GoogleTranslateProvider(BaseProvider):
                         response = await self._post_with_retry(
                             headers, payload, trace=trace, proxy=proxy
                         )
-                    break
                 except _TRANSPORT_ERRORS as exc:
                     if proxy is not None and proxy_pool is not None:
                         await proxy_pool.mark_failure(proxy, rate_limited=False)
                     last_transport = exc
-                    if proxy is not None and _attempt + 1 < proxy_attempts:
-                        continue
+                    response = None
+                    continue
+                if response is not None and response.status_code in _PROXY_SWITCH_STATUS:
+                    if proxy is not None and proxy_pool is not None:
+                        await proxy_pool.mark_failure(
+                            proxy, rate_limited=response.status_code == 429
+                        )
+                    last_switch = response
+                    response = None
+                    continue
+                break
+            if response is None:
+                if last_transport is not None:
                     pool.mark_failed(gk)
                     metrics.errors_by_key.labels(key=key_hash(gk), code="transport").inc()
                     if record_health:
                         self._record_upstream_failure("transport")
-                    break
-            if response is None:
-                continue
+                    continue
+                if last_switch is not None:
+                    # 出口全部尝试完: 保留最后一次限流/5xx 语义; 代理失败已在循环内标记
+                    response = last_switch
+                    proxy = None
+                else:
+                    continue
             if response.status_code in _KEY_FAILOVER_STATUS:
                 # Key 凭证/配额失效: 标记失败并切换到下一 Key
                 if proxy is not None and proxy_pool is not None:
@@ -691,7 +721,7 @@ class GoogleTranslateProvider(BaseProvider):
                 self.circuit_breaker.record_success()
             pool.mark_success(gk)
             if proxy is not None and proxy_pool is not None:
-                await proxy_pool.mark_success(proxy)
+                await proxy_pool.mark_success(proxy, latency_ms=(time.monotonic() - started) * 1000)
             if trace is not None:
                 trace["used_key"] = key_hash(gk)
                 trace["upstream_status"] = response.status_code

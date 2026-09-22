@@ -26,14 +26,14 @@ def test_normalize_no_port_returns_none():
 
 
 @pytest.mark.asyncio
-async def test_entry_day_reset():
+async def test_proxy_retest_cooldown():
     pool = ProxyPool()
     pool.add_many(["http://a:80"], source="free")
     e = pool.entries[0]
-    e.day_key = 0
-    e.use_count = 5
+    await pool.mark_failure("http://a:80", rate_limited=True)
+    assert e.available(time.time()) is False
+    e.cooldown_until = time.time() - 0.1
     assert e.available(time.time()) is True
-    assert e.use_count == 0
 
 
 @pytest.mark.asyncio
@@ -52,11 +52,11 @@ async def test_pool_rotation_cooldown_and_health():
     assert pool.add_many(["http://a:80", "http://b:80"], source="free") == 2
     first = await pool.acquire()
     second = await pool.acquire()
-    assert {first, second} == {"http://a:80", "http://b:80"}
-    # 全部用过一轮后进入冷却, acquire 仍返回最早结束冷却的
+    # 低延迟粘滞: 相同健康/未知延迟时复用同一个
+    assert first == second == "http://a:80"
     await pool.mark_failure(first, rate_limited=True)
     pick = await pool.acquire()
-    assert pick in ("http://a:80", "http://b:80")
+    assert pick == "http://b:80"
     snap = pool.snapshot()
     assert snap["total"] == 2
     assert snap["free"] == 2
@@ -114,7 +114,7 @@ class _FakePool:
     async def mark_failure(self, url, rate_limited=True):
         self.calls.append(("fail", url, rate_limited))
 
-    async def mark_success(self, url):
+    async def mark_success(self, url, latency_ms=None):
         self.calls.append(("ok", url))
 
 
@@ -130,7 +130,7 @@ def _fake_resp(status: int, translated="bonjour"):
 
 
 @pytest.mark.asyncio
-async def test_provider_uses_and_marks_proxy():
+async def test_provider_direct_first_success():
     provider = GoogleTranslateProvider()
     fake = _FakePool()
     provider.proxy_pool = fake
@@ -140,6 +140,28 @@ async def test_provider_uses_and_marks_proxy():
 
     async def _post(headers, payload, trace=None, proxy=None):
         seen["proxy"] = proxy
+        return _fake_resp(200)
+
+    provider._post_with_retry = _post  # type: ignore[method-assign]
+    out = await provider._translate_uncached("hi", "auto", "zh-CN", True, None, "k")
+    assert out == "bonjour"
+    assert seen.get("proxy") is None  # 本机直连优先
+    assert "acquire" not in fake.calls
+
+
+@pytest.mark.asyncio
+async def test_provider_falls_back_to_proxy_after_transport():
+    provider = GoogleTranslateProvider()
+    fake = _FakePool()
+    provider.proxy_pool = fake
+    provider.key_pool = KeyPool(["k1"], cooldown_seconds=0)
+    provider.circuit_breaker = None
+    seen = {}
+
+    async def _post(headers, payload, trace=None, proxy=None):
+        seen["proxy"] = proxy
+        if proxy is None:
+            raise httpx.TransportError("boom")
         return _fake_resp(200)
 
     provider._post_with_retry = _post  # type: ignore[method-assign]
@@ -201,8 +223,8 @@ async def test_provider_rotates_proxy_on_transport_error():
     provider._post_with_retry = _post  # type: ignore[method-assign]
     out = await provider._translate_uncached("hi", "auto", "zh-CN", True, None, "k")
     assert out == "bonjour"
-    assert fake.calls.count("acquire") == 2
-    assert ("fail", "http://p:8080", False) in fake.calls
+    assert fake.calls.count("acquire") == 1
+    assert ("ok", "http://p:8080") in fake.calls
 
 
 def test_pool_load_file_and_invalid_file(tmp_path):

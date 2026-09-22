@@ -1,12 +1,13 @@
-"""代理池 (v2.13.0): 住宅文件 + 免费抓取双源, 智能轮换出口 IP。
+"""代理池 (v2.13.6): 住宅文件 + 免费抓取双源, 低延迟粘滞 + 失败重试冷却。
 
 设计要点:
-- 双源: residential(文件, 优先) + free(抓取, 兜底), 每请求换出口降低上游按 IP 风控
-- 分配: 优先使用从未用过的 IP; 全用过一轮后按 health_score(EWMA) 降序 + 冷却最早结束
-- 冷却: 递增冷却 (PROXY_USE_COOLDOWN_MAP), 429/失败触发冷却并下调健康分
-- 健康: EWMA 成功率, 失败降分、成功升分, 不硬剔除, 给恢复机会
-- 观测: snapshot 只暴露 host:port, 不泄漏 user:pass 凭据
-- 抓取: free_proxy_fetcher_loop 周期抓取公共免费代理列表, 并发校验后注入, 过期剔除
+- 出口策略: 先本机服务器直连(无代理); 直连失败/429 再按延迟从低到高逐个换代理
+- 分配: 已校验/住宅优先, 选延迟最低的健康代理粘滞复用; 失败进 PROXY_RETEST_SECONDS 冷却
+- 冷却: 失败(网络/429/5xx)后冷却 1s, 到点重新测延迟/可用, 可用即回池
+- 健康: EWMA 成功率; 失败降分, 成功升分并记录延迟
+- 无每日限额: 代理按 可用性 / 延迟 / 健康 调度
+- 观测: snapshot 只暴露 host:port + latency_ms / validated / health
+- 抓取: free_proxy_fetcher_loop 周期抓取公共免费代理列表, 分批校验后注入, 过期剔除
 """
 
 from __future__ import annotations
@@ -22,25 +23,12 @@ from loguru import logger
 from app.core.config import settings
 from app.core.metrics import metrics
 
-DAILY_WINDOW = 24 * 3600
 DEFAULT_FREE_URLS = (
     "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=10000"
     "&country=all&ssl=all&anonymity=all,"
     "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt,"
     "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt"
 )
-
-
-def _parse_cooldown_map(raw: str) -> dict[int, int]:
-    out: dict[int, int] = {}
-    for i, part in enumerate(raw.split(","), start=1):
-        part = part.strip()
-        if part.isdigit():
-            out[i] = int(part)
-    return out or {1: 0, 2: 10, 3: 30, 4: 90, 5: 300}
-
-
-_COOLDOWN_MAP = _parse_cooldown_map(settings.PROXY_USE_COOLDOWN_MAP)
 
 
 def normalize_proxy_url(line: str) -> str | None:
@@ -74,10 +62,10 @@ class ProxyEntry:
         "added_at",
         "consecutive_fails",
         "cooldown_until",
-        "day_key",
         "health_score",
         "last_success_ts",
         "last_used_at",
+        "latency_ms",
         "source",
         "url",
         "use_count",
@@ -90,23 +78,15 @@ class ProxyEntry:
         self.added_at = time.time()
         self.last_used_at = 0.0
         self.use_count = 0
-        self.day_key = int(time.time() / DAILY_WINDOW)
         self.cooldown_until = 0.0
         self.consecutive_fails = 0
         self.health_score = 1.0
         self.last_success_ts = 0.0
         self.validated = False
+        self.latency_ms = 0.0
 
     def available(self, now: float) -> bool:
-        if now < self.cooldown_until:
-            return False
-        day = int(now / DAILY_WINDOW)
-        if day != self.day_key:
-            self.day_key = day
-            self.use_count = 0
-            self.consecutive_fails = 0
-        max_use = settings.PROXY_MAX_USE_PER_DAY
-        return not (max_use > 0 and self.use_count >= max_use)
+        return now >= self.cooldown_until
 
     def snapshot(self) -> dict:
         now = time.time()
@@ -119,6 +99,7 @@ class ProxyEntry:
             "fails": self.consecutive_fails,
             "health_score": round(self.health_score, 3),
             "validated": self.validated,
+            "latency_ms": round(self.latency_ms, 1) if self.latency_ms else None,
         }
 
 
@@ -169,7 +150,10 @@ class ProxyPool:
         return removed
 
     async def acquire(self, prefer_source: str | None = None) -> str | None:
-        """取一个可用出口; 无可用时返回 None (上层走直连)。"""
+        """取一个可用出口: 已校验/住宅优先, 延迟最低的健康代理粘滞复用。
+
+        成功不触发冷却, 因此低延迟代理会一直被复用; 失败由 mark_failure 冷却 1s 后回池。
+        """
         if not self.entries:
             return None
         async with self._lock:
@@ -184,17 +168,19 @@ class ProxyPool:
                 if pref:
                     candidates = pref
             if candidates:
-                unused = [e for e in candidates if e.use_count == 0]
-                if unused:
-                    pick = max(unused, key=lambda e: e.health_score)
+                healthy = [e for e in candidates if e.health_score >= 0.5]
+                if healthy:
+                    candidates = healthy
+                # 延迟已知的优先, 按延迟升序; 未知延迟按健康分降序兜底
+                known = [e for e in candidates if e.latency_ms > 0]
+                if known:
+                    pick = min(known, key=lambda e: (e.latency_ms, -e.health_score))
                 else:
                     pick = max(candidates, key=lambda e: (e.health_score, -e.cooldown_until))
             else:
                 pick = min(self.entries, key=lambda e: e.cooldown_until)
             pick.last_used_at = now
             pick.use_count += 1
-            next_level = min(pick.use_count, max(_COOLDOWN_MAP))
-            pick.cooldown_until = now + _COOLDOWN_MAP[next_level]
             metrics.proxy_uses.labels(source=pick.source).inc()
             return pick.url
 
@@ -204,28 +190,33 @@ class ProxyPool:
                 if e.url == url:
                     e.consecutive_fails += 1
                     e.health_score = 0.7 * e.health_score
-                    next_level = min(e.use_count + 1, max(_COOLDOWN_MAP))
-                    delay = _COOLDOWN_MAP[next_level] if rate_limited else 30
-                    e.cooldown_until = time.time() + delay
+                    # 1s 后重新测延迟/可用性, 能用了就回池
+                    e.cooldown_until = time.time() + max(0.0, settings.PROXY_RETEST_SECONDS)
                     metrics.proxy_results.labels(source=e.source, result="fail").inc()
                     return
 
-    async def mark_success(self, url: str) -> None:
+    async def mark_success(self, url: str, latency_ms: float | None = None) -> None:
         async with self._lock:
             for e in self.entries:
                 if e.url == url:
                     e.consecutive_fails = 0
                     e.health_score = 0.7 * e.health_score + 0.3
                     e.last_success_ts = time.time()
+                    if latency_ms is not None and latency_ms > 0:
+                        e.latency_ms = (
+                            0.7 * e.latency_ms + 0.3 * latency_ms if e.latency_ms else latency_ms
+                        )
                     metrics.proxy_results.labels(source=e.source, result="ok").inc()
                     return
 
-    async def mark_validated(self, url: str, ok: bool) -> None:
+    async def mark_validated(self, url: str, ok: bool, latency_ms: float | None = None) -> None:
         """校验结果回填: 通过则 validated=True 且健康分上调, 失败也标记已校验(不再兜底优先)。"""
         async with self._lock:
             for e in self.entries:
                 if e.url == url:
                     e.validated = True
+                    if latency_ms is not None and latency_ms > 0:
+                        e.latency_ms = latency_ms
                     if ok:
                         e.consecutive_fails = 0
                         e.health_score = 0.7 * e.health_score + 0.3
@@ -259,21 +250,24 @@ def parse_free_lines(text: str) -> list[str]:
     return [n for n in (normalize_proxy_url(x) for x in text.splitlines()) if n]
 
 
-async def validate_proxy(url: str) -> bool:  # pragma: no cover - 网络校验, 由生产 E2E 覆盖
-    """用短超时请求校验代理出口可用性 (不会消耗翻译配额)。"""
+async def validate_proxy(url: str) -> float | None:  # pragma: no cover - 网络校验
+    """短超时校验代理出口可用性, 返回延迟毫秒; 失败返回 None。"""
     target = settings.PROXY_VALIDATE_URL
     timeout = max(1.0, settings.PROXY_VALIDATE_TIMEOUT)
     try:
+        started = time.monotonic()
         async with httpx.AsyncClient(proxy=url, timeout=timeout) as client:
             resp = await client.get(target)
-            return resp.status_code in (200, 204)
+            if resp.status_code in (200, 204):
+                return (time.monotonic() - started) * 1000
+            return None
     except Exception:
-        return False
+        return None
 
 
 async def _validate_and_mark(pool: ProxyPool, url: str) -> None:  # pragma: no cover - 网络校验
-    ok = await validate_proxy(url)
-    await pool.mark_validated(url, ok)
+    latency = await validate_proxy(url)
+    await pool.mark_validated(url, latency is not None, latency_ms=latency)
 
 
 async def free_proxy_fetcher_loop(
