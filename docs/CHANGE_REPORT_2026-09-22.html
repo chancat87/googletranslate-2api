@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>googletranslate-2api v2.12.3 变更报告</title>
+<style>
+  :root {
+    --bg: #f5f7fa; --surface: #ffffff; --surface2: #eef2f6;
+    --text: #16202b; --muted: #64748b; --line: #dbe1ea;
+    --accent: #0f62fe; --accent-soft: #e6efff; --teal: #0e9384;
+    --ok: #0d8a4e; --warn: #b45309; --danger: #dc2626;
+    --radius: 8px; --font: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  }
+  [data-theme="dark"] {
+    --bg: #0b0f14; --surface: #141b24; --surface2: #1c2632;
+    --text: #e6edf5; --muted: #8ea0b5; --line: #263442;
+    --accent: #4c8dff; --accent-soft: #15233c; --teal: #37c6b2;
+    --ok: #4ade80; --warn: #f0a95d; --danger: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font); line-height: 1.6; }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 28px 20px 64px; }
+  header.hero { background: linear-gradient(135deg, #0f62fe, #0e9384); color: #fff; border-radius: var(--radius); padding: 28px 26px; }
+  header.hero h1 { margin: 0 0 6px; font-size: 28px; }
+  header.hero p { margin: 0; opacity: .92; }
+  .badge { display: inline-block; background: rgba(255,255,255,.2); border-radius: 999px; padding: 4px 12px; font-size: 13px; }
+  h2 { margin-top: 40px; font-size: 22px; border-left: 4px solid var(--accent); padding-left: 12px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px; margin-top: 14px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { background: var(--surface2); }
+  code { background: var(--surface2); border-radius: 4px; padding: 1px 6px; font-size: 13px; }
+  .ok { color: var(--ok); font-weight: 600; }
+  .warn { color: var(--warn); font-weight: 600; }
+  .danger { color: var(--danger); font-weight: 600; }
+  .timeline { list-style: none; padding: 0; }
+  .timeline li { position: relative; padding: 0 0 16px 24px; border-left: 2px solid var(--line); margin-left: 8px; }
+  .timeline li:before { content: ""; position: absolute; left: -7px; top: 6px; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); }
+  .quiz-item { margin-top: 14px; }
+  .quiz-item p { margin: 0 0 6px; font-weight: 600; }
+  .quiz-item label { display: block; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; margin-top: 6px; cursor: pointer; }
+  .quiz-item label:hover { background: var(--surface2); }
+  .btn { background: var(--accent); color: #fff; border: 0; border-radius: 6px; padding: 10px 18px; font-size: 15px; cursor: pointer; margin-top: 18px; }
+  .btn:hover { filter: brightness(1.05); }
+  #score { margin-top: 14px; font-size: 17px; font-weight: 700; }
+  .theme-toggle { float: right; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; cursor: pointer; color: var(--text); }
+  @media (max-width: 640px) {
+    header.hero h1 { font-size: 22px; }
+    .wrap { padding: 16px 12px 48px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+</head>
+<body data-theme="light">
+<div class="wrap">
+  <button class="theme-toggle" onclick="toggleTheme()">切换深色/浅色</button>
+  <header class="hero">
+    <h1>googletranslate-2api v2.12.3 变更报告</h1>
+    <p><span class="badge">2026-09-22</span> <span class="badge">生产验收 + Spec Kit 规范 + 终局审计</span></p>
+    <p>一份让你“看懂这次变更里发生的一切”的报告，底部附 10 题测验，通过才算签收。</p>
+  </header>
+
+  <h2>一、上下文与直觉</h2>
+  <div class="card">
+    <p><strong>项目是什么：</strong>一个把 Google Translate 上游封装成 OpenAI 兼容翻译 API 的网关，带 Web UI、多 Key 池、缓存/限流/熔断、可观测与多路径部署。</p>
+    <p><strong>核心直觉：</strong>既然要“上生产”，就不能只追求接口长得像；必须让调用方一次跑通、让部署方升级不断、让新人按文档能复现。因此本轮不是加花活，而是把“看起来能跑”升级为“已实测能跑”，并把判断依据固化进规范与报告。</p>
+    <p><strong>关键取舍：</strong>不接 Immersive Translate 扩展内置 Key（凭证滥用/易吊销/ToS 风险），改用“用户自有多 Key 池 + DEMO 无 Key 降级”；单机热更新用 nginx 蓝绿双副本 + `proxy_next_upstream` 而不是简单 `docker compose up -d`，因为后者会中断；根路径按 `Accept` 头分流，浏览器进 UI、API 客户端仍拿 JSON，兼容两拨用户。</p>
+  </div>
+
+  <h2>四、真实验证证据</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th>项</th><th>结果</th></tr></thead>
+      <tbody>
+        <tr><td>全量回归</td><td class="ok">312 passed / 1 skipped，覆盖率 98.94%</td></tr>
+        <tr><td>静态质量</td><td class="ok">ruff / format / mypy / 文档死链全过</td></tr>
+        <tr><td>CI</td><td class="ok">main + tag 触发全绿（含浏览器 E2E、Docker、kubeconform）</td></tr>
+        <tr><td>安全扫描</td><td class="ok">Gitleaks / Trivy / SBOM / pip-audit 全绿</td></tr>
+        <tr><td>生产公网 E2E</td><td class="ok">`/health` `/ready` `/v1/models`、非流式 + SSE 翻译、Web UI 全部 200</td></tr>
+        <tr><td>压测</td><td class="ok">conc 1/5/10 全 200，0 错 0 429，QPS 6.3 / 21.8 / 18.3</td></tr>
+        <tr><td>零中断</td><td class="ok">重启单副本 30/30 200；热升级/回滚各 60/60 200</td></tr>
+        <tr><td>版本</td><td class="ok">`GET /health` 返回 version 2.12.3</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>五、风险与边界（诚实声明）</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th>边界</th><th>状态</th></tr></thead>
+      <tbody>
+        <tr><td>真实 Google Key</td><td class="warn">只存在于服务器 `.env`；仓库/镜像/文档均不包含明文，本报告不展示</td></tr>
+        <tr><td>K8s 生产部署</td><td class="warn">配置已就绪，但需配置 `KUBE_CONFIG_*` 才能真正落集群（当前为单机蓝绿 Docker）</td></tr>
+        <tr><td>更高并发</td><td class="warn">单 Key 有极限；多 Key 池已实现，真实 N×QPS 需准备 N 个可用 Key 复测</td></tr>
+        <tr><td>自动更新</td><td class="warn">Watchtower 未默认开启，避免未经确认自动滚版本；需要时按文档启用</td></tr>
+        <tr><td>无法 100% 证明“无 bug”</td><td class="warn">已用测试/压测/升级回滚尽量压缩风险，但任何系统都不能宣称绝对无 bug</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>六、变更测验（必须通过）</h2>
+  <div class="card">
+    <p>共 10 题，答对 8 题及以上为通过。点击“提交答案”查看得分与解析。</p>
+    <div id="quiz"></div>
+    <button class="btn" onclick="submitQuiz()">提交答案</button>
+    <div id="score"></div>
+  </div>
+</div>
+
+<script>
+const QUIZ = [
+  { q: "根路径 `/` 在浏览器里打开时返回什么？", opts: ["JSON 欢迎语", "Web UI 页面", "404"], a: 1,
+    explain: "浏览器带 `Accept: text/html`，根路径返回 Web UI；纯 API 客户端仍返回 JSON。" },
+  { q: "无 Key 用户如何启动服务？", opts: ["无法启动", "设置 DEMO_MODE=true 自动演示", "必须填假 Key"], a: 1,
+    explain: "DEMO_MODE 无 Key 降级，返回 `demo:` 前缀结果，便于试用/教学。" },
+  { q: "为什么不接入 Immersive Translate 扩展内置 Key？", opts: ["扩展太旧", "凭证滥用/易吊销且违反 ToS", "性能差"], a: 1,
+    explain: "第三方网页/扩展里的 Key 属于凭证滥用，很快吊销，不能作生产上游；已审计留档。" },
+  { q: "单机零中断升级的核心机制是什么？", opts: ["docker compose up -d", "nginx 蓝绿双副本 + proxy_next_upstream + /ready", "重启整个服务器"], a: 1,
+    explain: "一次只重建一个 app 副本，nginx 自动重试到另一个，服务不中断。" },
+  { q: "升级脚本如何回滚？", opts: ["删掉所有容器", "同入口指定旧镜像 tag", "不能回滚"], a: 1,
+    explain: "`deploy/upgrade.sh <旧镜像>` 即滚动回滚；实测回滚期间健康检查 60/60 200。" },
+  { q: "实测压测结果中，并发 10 的 QPS 约为？", opts: ["18.3", "1.2", "50"], a: 0,
+    explain: "conc 1/5/10 对应 QPS 6.3 / 21.8 / 18.3，且全 200、0 错 0 429。" },
+  { q: "CI 安全扫描包含哪些？（多选意识题，选最完整项）", opts: ["只有 lint", "Gitleaks + Trivy + SBOM + pip-audit", "只有依赖更新"], a: 1,
+    explain: "四条安全闸全部在 security-scan 中执行并可留证据。" },
+  { q: "生产服务器上 `/health` 返回的版本号目前是？", opts: ["2.12.3", "1.0.0", "latest"], a: 0,
+    explain: "v2.12.3 发布后已在服务器热升级并实际核验版本号。" },
+  { q: "Spec Kit 宪法要求的关键非协商项是？", opts: ["Test-First (TDD)", "随便写文档", "不做测试"], a: 0,
+    explain: "TDD 与 Honest Closure 为 MUST；覆盖率阈值 97%。" },
+  { q: "工作区里有敏感未跟踪文件时该怎么办？", opts: ["全部提交", "不动用户文件，只提交本次产物并说明", "删除后提交"], a: 1,
+    explain: "保留用户未跟踪文件（.cline/、.kiro/、AGENTS.md 等），不纳入提交。" }
+];
+
+let theme = localStorage.getItem("gt2theme") || "light";
+document.body.dataset.theme = theme;
+function toggleTheme() {
+  theme = theme === "light" ? "dark" : "light";
+  document.body.dataset.theme = theme;
+  localStorage.setItem("gt2theme", theme);
+}
+
+function renderQuiz() {
+  const q = document.getElementById("quiz");
+  q.innerHTML = QUIZ.map((item, i) => `
+    <div class="quiz-item">
+      <p>${i + 1}. ${item.q}</p>
+      ${item.opts.map((opt, j) => `
+        <label><input type="radio" name="q${i}" value="${j}"> ${opt}</label>
+      `).join("")}
+    </div>`).join("");
+}
+
+function submitQuiz() {
+  let correct = 0;
+  const details = [];
+  QUIZ.forEach((item, i) => {
+    const sel = document.querySelector(`input[name="q${i}"]:checked`);
+    const user = sel ? Number(sel.value) : -1;
+    if (user === item.a) { correct += 1; details.push(`<li class="ok">${i + 1}. 正确</li>`); }
+    else { details.push(`<li class="danger">${i + 1}. 错误（你的选择：${user === -1 ? "未作答" : item.opts[user]}）→ ${item.explain}</li>`); }
+  });
+  const pass = correct >= 8;
+  document.getElementById("score").innerHTML =
+    `得分：${correct} / ${QUIZ.length} ` +
+    (pass ? '<span class="ok">✓ 通过</span>' : '<span class="danger">✗ 未通过，请重读报告后重试</span>') +
+    `<ul style="padding-left:18px">${details.join("")}</ul>`;
+}
+
+renderQuiz();
+</script>
+</body>
+</html>
+
+  <h2>二、这轮做了什么（时间线）</h2>
+  <div class="card">
+    <ul class="timeline">
+      <li><strong>v2.9.x：</strong>恢复仓库历史 Key 到本地 `.env`；真实上游 E2E 20/20；拒绝接入第三方扩展 Key 并出具审计文档；Key 可用性自检 API + UI。</li>
+      <li><strong>v2.10.x：</strong>无 Key DEMO 模式；根路径浏览器直达 Web UI；启动脚本自动建 `.env`/自动开浏览器。</li>
+      <li><strong>v2.11.x：</strong>完整 GitHub Actions CI/CD（缓存、并发取消、pip-audit、Gitleaks/Trivy/SBOM、Slack 通知、staging/production 部署与回滚）。</li>
+      <li><strong>v2.12.0：</strong>单机零中断热更新：蓝绿双副本 + nginx 重试 + `upgrade.sh` + 可选 Watchtower。</li>
+      <li><strong>v2.12.1：</strong>修复蓝绿 compose 在 1 核服务器上的 `cpus` 兼容问题（`APP_CPUS`）。</li>
+      <li><strong>v2.12.2：</strong>生产部署验收审计；本报告 + Spec Kit 规范 + `workflow_status.md` 需求追踪矩阵。</li>
+    </ul>
+  </div>
+
+  <h2>三、真实改动清单</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th>区域</th><th>文件</th><th>作用</th></tr></thead>
+      <tbody>
+        <tr><td>核心</td><td><code>main.py</code>、<code>app/core/config.py</code>、<code>app/providers/googletranslate_provider.py</code></td><td>根路径 UI 分流、DEMO 模式、版本/配置</td></tr>
+        <tr><td>Web UI</td><td><code>app/web/app.html</code></td><td>本地 favicon、主题/响应式单文件界面</td></tr>
+        <tr><td>启动</td><td><code>start-dev.bat</code>、<code>start.ps1</code></td><td>UTF-8 安全、自动建 env、就绪后自动开浏览器</td></tr>
+        <tr><td>CI/CD</td><td><code>.github/workflows/ci.yml</code>、<code>deploy.yml</code></td><td>质量门禁、漏洞扫描、staging/production/回滚/通知</td></tr>
+        <tr><td>部署</td><td><code>deploy/compose/*</code>、<code>deploy/upgrade.sh</code>、<code>scripts/ci/*</code></td><td>蓝绿零中断、滚动升级/回滚、kubectl 辅助</td></tr>
+        <tr><td>测试</td><td><code>tests/test_demo_mode.py</code>、<code>tests/test_deploy_compose.py</code> 等</td><td>312 passed / 1 skipped，覆盖率 98.94%</td></tr>
+        <tr><td>文档</td><td>README / CHANGELOG / API_DOCS / HOT_UPDATE / CI_CD_PIPELINE / PRODUCTION_AUDIT / IMMERSIVE_TRANSLATE_AUDIT</td><td>与真实行为同步</td></tr>
+        <tr><td>规范</td><td><code>.specify/</code>、<code>workflow_status.md</code></td><td>宪法 + 001 特性规范/计划/任务 + 需求追踪矩阵</td></tr>
+      </tbody>
+    </table>
+  </div>

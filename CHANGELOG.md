@@ -2,6 +2,20 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [2.12.3] - 2026-09-22
+
+### 新增 (Spec Kit 规范与终局报告)
+
+- 初始化 `.specify/`：宪法（Production-First / One-Call / Test-First / Zero-Downtime / Honest Closure）
+- 新增 `001-production-hardening` 特性规范：用户故事、验收场景、功能需求、成功标准、边界
+- 新增 `workflow_status.md`：全上下文需求追踪矩阵与任务执行链证据总账
+- 新增 `docs/CHANGE_REPORT_2026-09-22.html`：变更上下文、直觉、改动清单、真实验证证据、风险边界与 10 题测验（答对 8 题通过）
+- `.env.example` 模板头更新到当前版本
+
+### 验证
+
+- 全量回归保持 312 passed / 1 skipped，覆盖率 98.94%；ruff / mypy / 文档死链全过
+
 ## [2.12.2] - 2026-09-22
 
 ### 新增 (生产部署验收与审计)
