@@ -16,6 +16,7 @@ import pytest
 
 # --- M0: 导入期预置 (必须在 import main / app 之前执行) ---
 os.environ.setdefault("GOOGLE_API_KEY", "test-key-placeholder")
+os.environ.setdefault("API_MASTER_KEY", "1")
 
 # 将项目根目录加入 sys.path, 便于 import main / app
 ROOT = Path(__file__).resolve().parent.parent
@@ -27,3 +28,4 @@ if str(ROOT) not in sys.path:
 def _ensure_google_key(monkeypatch):
     """双保险: 每个测试再次注入占位 key (对新创建的 Settings 实例生效)。"""
     monkeypatch.setenv("GOOGLE_API_KEY", os.environ.get("GOOGLE_API_KEY", "test-key-placeholder"))
+    monkeypatch.setenv("API_MASTER_KEY", os.environ.get("API_MASTER_KEY", "1"))

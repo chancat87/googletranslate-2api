@@ -2,6 +2,20 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [2.10.0] - 2026-09-22
+
+### 新增 (无 Key Demo 模式)
+
+- `DEMO_MODE=true`：无需配置真实 Google Key 也可启动服务
+- 翻译/流式/批量走内置演示上游，返回 `demo:` 前缀结果；`/ready` 与 Key 自检均正常
+- 不内置任何第三方 Key，仅用于本地试用/教学/无 Key 环境
+
+### 验证
+
+- 新增 3 项 Demo 模式测试：无 Key 初始化、翻译返回 demo、probe 正常
+- 真实上游 E2E：使用仓库历史 Key 恢复本地 `.env` 后 **20/20 全过**
+- 真实上游并发：conc 1/5/10/20 全 200，QPS 2.1/4.1/4.6/9.9，0 错 0 429
+
 ## [2.9.1] - 2026-09-22
 
 ### 文档 / 安全审计

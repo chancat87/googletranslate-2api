@@ -107,9 +107,11 @@ class GoogleTranslateProvider(BaseProvider):
 
     async def initialize(self):
         keys = self._effective_keys()
-        if not keys:
+        if settings.DEMO_MODE:
+            keys = ["demo-key"]
+        elif not keys:
             raise ValueError("GOOGLE_API_KEY / GOOGLE_API_KEYS 未在 .env 文件中配置。")
-        if any("在这里填入" in k for k in keys):
+        if not settings.DEMO_MODE and any("在这里填入" in k for k in keys):
             raise ValueError("GOOGLE_API_KEY 仍是示例占位符, 请填入真实 Key 后启动。")
         # 3.D.5 / v1.5.1: 显式连接池限制; HTTPX_MAX_CONNECTIONS=0 时自动按批量并发推导
         pool_conns = max(0, settings.HTTPX_MAX_CONNECTIONS) or max(
@@ -692,6 +694,13 @@ class GoogleTranslateProvider(BaseProvider):
 
         仅对网络异常 / 429 / 5xx 重试; 4xx (400/401/403) 不重试。
         """
+        if settings.DEMO_MODE:
+            await asyncio.sleep(0.01)
+            text = "hi"
+            with contextlib.suppress(Exception):
+                text = str(payload[0][0][0])
+            request = httpx.Request("POST", self.upstream_url)
+            return httpx.Response(200, request=request, json=[[f"demo:{text}"]])
         attempts = max(1, settings.UPSTREAM_RETRY_ATTEMPTS)
         base = max(0.0, settings.UPSTREAM_RETRY_BACKOFF_BASE)
         jitter = max(0.0, settings.UPSTREAM_RETRY_JITTER)
@@ -921,6 +930,8 @@ class GoogleTranslateProvider(BaseProvider):
 
     async def probe_key(self, key: str) -> dict[str, Any]:
         """v2.9.0: 用给定 Key 向真实上游发一次最小探测, 判断有效性。"""
+        if settings.DEMO_MODE:
+            return {"http_status": 200, "ok": True}
         if self.client is None:
             return {"ok": False, "error": "uninitialized"}
         payload = self._prepare_payload(settings.READY_PROBE_TEXT, "auto", "zh-CN")

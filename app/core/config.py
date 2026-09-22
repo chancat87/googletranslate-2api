@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     )
 
     APP_NAME: str = "googletranslate-2api"
-    APP_VERSION: str = "2.9.1"
+    APP_VERSION: str = "2.10.0"
     DESCRIPTION: str = "一个将 Google Translate API 转换为兼容 OpenAI 格式的代理。"
 
     API_MASTER_KEY: str | None = None
@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     ALLOW_WEAK_API_KEY: bool = False
 
     GOOGLE_API_KEY: str | None = None
+    # v2.10.0: 无 Key Demo 模式 (返回 demo: 前缀, 不访问真实上游)
+    DEMO_MODE: bool = False
     # 阶段 1.1: 多上游 Key 池 (逗号分隔); 未设置时回退 GOOGLE_API_KEY (向后兼容)
     GOOGLE_API_KEYS: str | None = None
     # v2.8.0: 从本地文件批量加载 Key (每行一个, # 开头为注释)

@@ -223,3 +223,16 @@ Redis / Secret 示例 + Kustomize），并给 Dockerfile/compose 增加优雅停
 | Web UI“验证 Keys” | ✅ 正常/失败状态 + toast 汇总 |
 | Playwright 浏览器 E2E | ✅ 含验证 Keys 步骤 PASS |
 | 全量回归 | ✅ 303 passed / 1 skipped，覆盖率 98.93% |
+
+## 十七、v2.10.0 无 Key Demo 模式 (2026-09-22)
+
+**交付**: `DEMO_MODE=true` 无 Key 启动；同时用仓库历史 Key 恢复本地 `.env` 并完成真实上游验收。
+
+| 项 | 结果 |
+|---|---|
+| 无 Key Demo 初始化 | ✅ 3 项测试 |
+| Demo 翻译 | ✅ 返回 `demo:` 前缀 |
+| Key 自检 | ✅ demo 模式返回 200 |
+| 真实上游 E2E | ✅ 20/20（历史 Key 恢复本地 `.env`） |
+| 真实上游并发 | ✅ conc 1/5/10/20 全 200，QPS 2.1/4.1/4.6/9.9，0 错 0 429 |
+| 全量回归 | ✅ 306 passed / 1 skipped，覆盖率 98.93% |
