@@ -135,19 +135,20 @@ async def main() -> None:
                     )
                     r = await client.post(args.url, content=payload, headers=headers)
                     if r.status_code != 200:
-                        print(
-                            f"warmup failed #{i} rep {rep + 1}: HTTP {r.status_code} -> abort"
-                        )
+                        print(f"warmup failed #{i} rep {rep + 1}: HTTP {r.status_code} -> abort")
                         return
             print("warmup done")
 
             def text_provider(i: int) -> str:
                 return texts[i % len(texts)]
         else:
+
             def text_provider(i: int) -> str:
                 return f"Upstream unique extreme #{i} {uuid.uuid4().hex} {time.time()}"
 
-        row = await run_burst(client, args.url, headers, args.concurrency, args.total, text_provider)
+        row = await run_burst(
+            client, args.url, headers, args.concurrency, args.total, text_provider
+        )
         print(
             f"  conc={row['concurrency']} ok={row['ok']} err={row['err']} 429={row['r429']} "
             f"qps={row['qps']} wall={row['wall_s']}s p50={row['p50_ms']}ms "
