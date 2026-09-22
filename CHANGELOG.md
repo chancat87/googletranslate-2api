@@ -2,6 +2,21 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [2.12.4] - 2026-09-22
+
+### 优化 (容器与数据库)
+
+- Dockerfile 改多阶段构建：builder 只装依赖，最终镜像更小、层数更少；`python:3.10-slim-bookworm` + `--no-cache-dir`
+- 非 root 用户 + `COPY --chown` + `/app/data` 预置 appuser 属主；`STOPSIGNAL SIGTERM`、`HEALTHCHECK` 保留
+- `.dockerignore` 扩充：排除 secrets/data/本地 AI 工具/venv/node_modules/docs/tests 等，缩小构建上下文
+- 蓝绿 compose 加固：app 容器 `read_only` + `init` + `no-new-privileges` + `/tmp` tmpfs + `app-data` 命名卷 + 日志轮转(10m×3)；redis 加内存/CPU 上限与日志轮转
+- SQLite 用量存储优化：`busy_timeout=10000`、`temp_store=MEMORY`、`idx_usage_day(day)` 索引加速按天聚合
+
+### 验证
+
+- 新增 6 项测试：SQLite PRAGMA/索引、compose 加固、Dockerfile 多阶段、.dockerignore
+- 全量回归保持 312+ 通过；CI Docker build smoke 验证多阶段镜像可构建
+
 ## [2.12.3] - 2026-09-22
 
 ### 新增 (Spec Kit 规范与终局报告)

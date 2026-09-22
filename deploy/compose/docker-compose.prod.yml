@@ -44,6 +44,19 @@ services:
     mem_limit: 800m
     cpus: "${APP_CPUS:-1.0}"
     stop_grace_period: 35s
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    volumes:
+      - app-data:/app/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - googletranslate-prod-net
     labels:
@@ -71,6 +84,19 @@ services:
     mem_limit: 800m
     cpus: "${APP_CPUS:-1.0}"
     stop_grace_period: 35s
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    volumes:
+      - app-data:/app/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - googletranslate-prod-net
     labels:
@@ -87,9 +113,20 @@ services:
       timeout: 2s
       start_period: 3s
       retries: 5
+    mem_limit: 128m
+    cpus: "0.5"
+    stop_grace_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - googletranslate-prod-net
 
 networks:
   googletranslate-prod-net:
     driver: bridge
+
+volumes:
+  app-data:

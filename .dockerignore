@@ -1,14 +1,52 @@
+# 运行环境与敏感文件
+.env
+.env.*
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# 版本控制与 CI
+.git/
+.github/
+.gitignore
+
+# Python 缓存/虚拟环境
 __pycache__/
 *.pyc
-.pytest_cache/
 .venv/
-.git/
-tests/
-计划文档/
-docs/
+.pytest_cache/
 .ruff_cache/
 .mypy_cache/
 htmlcov/
 .coverage
-.env
-.env.*
+
+# 前端/Node
+node_modules/
+package-lock.json
+
+# 本地 AI 工具与规范缓存
+.agents/
+.claude/
+.cline/
+.codebuddy/
+.codegraph/
+.continue/
+.junie/
+.kiro/
+.myagent/
+.specify/
+.mcp.json
+AGENTS.md
+opencode.json
+skills-lock.json
+workflow_status.md
+
+# 文档/测试/计划/参考
+tests/
+docs/
+计划文档/
+沉浸式翻译的翻译/
+prometheus/
+graft/
+skills/

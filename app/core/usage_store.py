@@ -2,6 +2,12 @@
 
 SQLite 单表, 按 (key_hash, day) 聚合; 只存哈希与计数, 不存原文/明文 Key。
 默认关闭 (USAGE_STORE_ENABLED=False); 开启后支持配额 (USAGE_DAY_QUOTA)。
+
+SQLite 优化 (v2.12.4):
+- WAL 写并发: journal_mode=WAL + synchronous=NORMAL
+- 锁等待: busy_timeout=10000 (10s) + 连接 timeout=10
+- 临时表进内存: temp_store=MEMORY
+- 按天查询索引: idx_usage_day(day) 加速 totals()
 """
 
 import asyncio
@@ -24,6 +30,8 @@ class UsageStore:
         conn = sqlite3.connect(self.db_path, timeout=10)
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA busy_timeout=10000")
+        conn.execute("PRAGMA temp_store=MEMORY")
         return conn
 
     def _init_db(self) -> None:
@@ -42,6 +50,7 @@ class UsageStore:
                 )
                 """
             )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_usage_day ON usage(day)")
             conn.commit()
         finally:
             conn.close()

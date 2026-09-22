@@ -43,3 +43,37 @@ def test_upgrade_script_rolls_both_replicas():
     assert "app-blue" in script and "app-green" in script
     assert "--force-recreate" in script
     assert "wait_ready" in script
+
+
+def test_prod_compose_hardening(options=()):
+    """v2.12.4: 只读根文件系统/init/no-new-privileges/tmpfs/数据卷/日志轮转。"""
+    compose = _load_yaml("deploy/compose/docker-compose.prod.yml")
+    for svc in ("app-blue", "app-green"):
+        s = compose["services"][svc]
+        assert s["read_only"] is True
+        assert s["init"] is True
+        assert s["security_opt"] == ["no-new-privileges:true"]
+        assert any("/tmp" in t for t in s["tmpfs"])
+        assert "app-data:/app/data" in s["volumes"]
+        assert s["logging"]["options"]["max-size"] == "10m"
+    redis = compose["services"]["redis"]
+    assert redis["mem_limit"] == "128m"
+    assert redis["cpus"] == "0.5"
+    assert "app-data" in compose.get("volumes", {})
+
+
+def test_dockerfile_multi_stage_and_hardening():
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    assert "AS builder" in dockerfile
+    assert "pip install --no-cache-dir --prefix=/install -r requirements.lock" in dockerfile
+    assert "COPY --from=builder /install /usr/local" in dockerfile
+    assert "COPY --chown=appuser:appuser . ." in dockerfile
+    assert "USER appuser" in dockerfile
+    assert "STOPSIGNAL SIGTERM" in dockerfile
+    assert "HEALTHCHECK" in dockerfile
+
+
+def test_dockerignore_excludes_secrets_and_tooling():
+    ignore = (ROOT / ".dockerignore").read_text(encoding="utf-8")
+    for pattern in (".env", "data/", ".venv/", "tests/", ".specify/", "node_modules/"):
+        assert pattern in ignore

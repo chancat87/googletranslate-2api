@@ -1,5 +1,6 @@
 """v2.1.0 用量存储 / 配额联动测试。"""
 
+import sqlite3
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -23,6 +24,27 @@ def _resp(status: int, translated: str = "ok"):
     r.text = translated
     r.request = MagicMock()
     return r
+
+
+def test_usage_store_sqlite_optimizations(tmp_path):
+    """v2.12.4: PRAGMA(WAL/busy_timeout/temp_store) 与 day 索引生效。"""
+    db = str(tmp_path / "opt.db")
+    store = UsageStore(db)
+    conn = store._connect()
+    try:
+        assert conn.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
+        assert conn.execute("PRAGMA busy_timeout").fetchone()[0] == 10000
+        assert conn.execute("PRAGMA temp_store").fetchone()[0] == 2
+    finally:
+        conn.close()
+    conn = sqlite3.connect(db)
+    try:
+        rows = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_usage_day'"
+        ).fetchall()
+        assert rows, "idx_usage_day 索引缺失"
+    finally:
+        conn.close()
 
 
 @pytest.mark.asyncio
