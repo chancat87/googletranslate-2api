@@ -2,6 +2,18 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [2.13.3] - 2026-09-22
+
+### 优化 (代理超时与并发保护)
+
+- 新增 `PROXY_REQUEST_TIMEOUT`（默认 10s）：走代理的请求整体超时，坏代理约 10s 内失败，不再挂到 60s
+- 新增 `PROXY_MAX_INFLIGHT`（默认 50）：代理请求并发信号量，避免瞬时打爆上游/代理源
+- 生产压测使用上述参数后单次失败时间有界化，方便快速对比代理质量
+
+### 验证
+
+- `_post_with_retry` 代理分支断言超时参数；`initialize` 断言并发信号量；代理/单飞相关 27 项测试通过；mypy 0 错误；ruff 全过
+
 ## [2.13.2] - 2026-09-22
 
 ### 优化 (代理快速轮换)

@@ -88,6 +88,7 @@ class GoogleTranslateProvider(BaseProvider):
         # v2.13.0: 代理池 (住宅文件 + 免费抓取轮换)
         self.proxy_pool: ProxyPool | None = None
         self._proxy_fetch_task: asyncio.Task | None = None
+        self._proxy_sem: asyncio.Semaphore | None = None
         self.upstream_url = settings.UPSTREAM_BASE_URL.rstrip("/") + "/v1/translateHtml"
         self.circuit_breaker: CircuitBreaker | None = None
         # 阶段 1.1: 多 Key 池 (initialize 时创建; _translate 惰性兜底)
@@ -145,9 +146,12 @@ class GoogleTranslateProvider(BaseProvider):
             self.usage_store = None
         self.proxy_pool = None
         self._proxy_fetch_task = None
+        self._proxy_sem = None
         if settings.PROXY_ENABLED:
             self.proxy_pool = ProxyPool()
             self.proxy_pool.load_file(settings.PROXY_FILE)
+            if settings.PROXY_MAX_INFLIGHT > 0:
+                self._proxy_sem = asyncio.Semaphore(settings.PROXY_MAX_INFLIGHT)
             if settings.PROXY_FREE_FETCH:
                 self._proxy_fetch_task = asyncio.create_task(
                     free_proxy_fetcher_loop(self.proxy_pool)
@@ -162,6 +166,7 @@ class GoogleTranslateProvider(BaseProvider):
                 await self._proxy_fetch_task
             self._proxy_fetch_task = None
         self.proxy_pool = None
+        self._proxy_sem = None
         if self.redis_cache is not None:
             await self.redis_cache.aclose()
             self.redis_cache = None
@@ -637,9 +642,15 @@ class GoogleTranslateProvider(BaseProvider):
                 if proxy_pool is not None and proxy_pool.enabled:
                     proxy = await proxy_pool.acquire()
                 try:
-                    response = await self._post_with_retry(
-                        headers, payload, trace=trace, proxy=proxy
-                    )
+                    if proxy is not None and self._proxy_sem is not None:
+                        async with self._proxy_sem:
+                            response = await self._post_with_retry(
+                                headers, payload, trace=trace, proxy=proxy
+                            )
+                    else:
+                        response = await self._post_with_retry(
+                            headers, payload, trace=trace, proxy=proxy
+                        )
                     break
                 except _TRANSPORT_ERRORS as exc:
                     if proxy is not None and proxy_pool is not None:
@@ -770,7 +781,8 @@ class GoogleTranslateProvider(BaseProvider):
             client = httpx.AsyncClient(
                 proxy=proxy,
                 timeout=httpx.Timeout(
-                    settings.API_REQUEST_TIMEOUT, connect=settings.PROXY_CONNECT_TIMEOUT
+                    settings.PROXY_REQUEST_TIMEOUT,
+                    connect=settings.PROXY_CONNECT_TIMEOUT,
                 ),
                 limits=httpx.Limits(max_connections=8, max_keepalive_connections=2),
             )

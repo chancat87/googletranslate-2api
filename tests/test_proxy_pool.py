@@ -228,8 +228,10 @@ async def test_provider_initialize_proxy_pool(monkeypatch, tmp_path):
     provider = GoogleTranslateProvider()
     await provider.initialize()
     assert provider.proxy_pool is not None
+    assert provider._proxy_sem is not None
     await provider.close()
     assert provider.proxy_pool is None
+    assert provider._proxy_sem is None
 
 
 @pytest.mark.asyncio
@@ -252,6 +254,7 @@ async def test_provider_proxy_fetch_task_cancelled(monkeypatch, tmp_path):
 
 class _FakeClient:
     def __init__(self, **kwargs):
+        self.kwargs = kwargs
         self.proxy = kwargs.get("proxy")
         self.closed = False
 
@@ -266,9 +269,17 @@ class _FakeClient:
 async def test_post_with_retry_proxy_branch(monkeypatch):
     provider = GoogleTranslateProvider()
     provider.client = _FakeClient()
-    monkeypatch.setattr(provider_mod.httpx, "AsyncClient", lambda **kw: _FakeClient(**kw))
+    clients = []
+    monkeypatch.setattr(
+        provider_mod.httpx,
+        "AsyncClient",
+        lambda **kw: clients.append(_FakeClient(**kw)) or clients[-1],
+    )
     resp = await provider._post_with_retry({}, [["hi"]], proxy="http://p:1")
     assert resp.status_code == 200
+    timeout = clients[0].kwargs["timeout"]
+    assert timeout.read == cfg.settings.PROXY_REQUEST_TIMEOUT
+    assert timeout.connect == cfg.settings.PROXY_CONNECT_TIMEOUT
 
 
 @pytest.mark.asyncio

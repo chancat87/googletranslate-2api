@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     )
 
     APP_NAME: str = "googletranslate-2api"
-    APP_VERSION: str = "2.13.2"
+    APP_VERSION: str = "2.13.3"
     DESCRIPTION: str = "一个将 Google Translate API 转换为兼容 OpenAI 格式的代理。"
 
     API_MASTER_KEY: str | None = None
@@ -135,6 +135,10 @@ class Settings(BaseSettings):
     PROXY_VALIDATE_TIMEOUT: float = 5.0
     # 走代理的上游连接超时 (秒)
     PROXY_CONNECT_TIMEOUT: float = 8.0
+    # 走代理的上游整体请求超时 (秒); 免费代理慢, 设短值快速换下一个
+    PROXY_REQUEST_TIMEOUT: float = 10.0
+    # 代理请求并发上限 (0=不限); 保护上游与代理源不被瞬时打爆
+    PROXY_MAX_INFLIGHT: int = 50
 
     # --- M12 指标 ---
     METRICS_ENABLED: bool = True
