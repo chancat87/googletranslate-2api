@@ -46,6 +46,7 @@
 *   **🚀 完整 CI/CD (v2.11.0)**：GitHub Actions 质量门禁 + staging/production 部署 + 一键回滚 + Slack 通知，见 [`docs/CI_CD_PIPELINE.md`](docs/CI_CD_PIPELINE.md)
 *   **♻️ 热更新零中断 (v2.12.0)**：nginx 蓝绿网关 + 双 app 副本滚动升级 + 可选 Watchtower 自动更新，单机升级不中断服务，见 [`docs/HOT_UPDATE.md`](docs/HOT_UPDATE.md)
 *   **🐳 容器与数据库加固 (v2.12.4)**：多阶段 Dockerfile、非 root + 只读根文件系统 + init + no-new-privileges、日志轮转、`app-data` 持久卷；SQLite 用量存储启用 WAL/busy_timeout/按天索引
+*   **🔄 代理池轮换 (v2.13.0)**：住宅文件 + 免费抓取双源，未使用优先 + 健康分 EWMA + 递增冷却，每请求轮换出口 IP 缓解上游按 IP 高并发风控，见 [`docs/PROXY_POOL.md`](docs/PROXY_POOL.md)
 *   **🛡️ 规范化错误处理**：统一状态码与错误响应格式，含健康检查端点
 *   **🔓 完全开源**：代码透明，易于理解和扩展
 

@@ -43,6 +43,7 @@ from app.core.config import settings
 from app.core.key_pool import KeyPool, key_hash
 from app.core.languages import auto_detect_target, is_supported
 from app.core.metrics import metrics
+from app.core.proxy_pool import ProxyPool, free_proxy_fetcher_loop
 from app.core.trace import TraceStore, format_trace_summary
 from app.core.usage_store import UsageStore
 from app.providers.base_provider import BaseProvider
@@ -84,6 +85,9 @@ class GoogleTranslateProvider(BaseProvider):
         self.cache = make_cache()
         self.redis_cache: RedisCacheBackend | None = None
         self.usage_store: UsageStore | None = None
+        # v2.13.0: 代理池 (住宅文件 + 免费抓取轮换)
+        self.proxy_pool: ProxyPool | None = None
+        self._proxy_fetch_task: asyncio.Task | None = None
         self.upstream_url = settings.UPSTREAM_BASE_URL.rstrip("/") + "/v1/translateHtml"
         self.circuit_breaker: CircuitBreaker | None = None
         # 阶段 1.1: 多 Key 池 (initialize 时创建; _translate 惰性兜底)
@@ -139,10 +143,25 @@ class GoogleTranslateProvider(BaseProvider):
             self.usage_store = UsageStore(settings.USAGE_DB_PATH)
         else:
             self.usage_store = None
+        self.proxy_pool = None
+        self._proxy_fetch_task = None
+        if settings.PROXY_ENABLED:
+            self.proxy_pool = ProxyPool()
+            self.proxy_pool.load_file(settings.PROXY_FILE)
+            if settings.PROXY_FREE_FETCH:
+                self._proxy_fetch_task = asyncio.create_task(
+                    free_proxy_fetcher_loop(self.proxy_pool)
+                )
         self.key_pool = KeyPool(keys, cooldown_seconds=settings.KEY_FAILOVER_COOLDOWN_SECONDS)
         self.reset_health()
 
     async def close(self):
+        if self._proxy_fetch_task is not None:
+            self._proxy_fetch_task.cancel()
+            with contextlib.suppress(BaseException):
+                await self._proxy_fetch_task
+            self._proxy_fetch_task = None
+        self.proxy_pool = None
         if self.redis_cache is not None:
             await self.redis_cache.aclose()
             self.redis_cache = None
@@ -610,9 +629,14 @@ class GoogleTranslateProvider(BaseProvider):
                 f"向上游发送翻译请求: src={source_lang} tgt={target_lang} key={key_hash(gk)}"
             )
             headers = self._prepare_headers(gk)
+            proxy = None
+            if self.proxy_pool is not None and self.proxy_pool.enabled:
+                proxy = await self.proxy_pool.acquire()
             try:
-                response = await self._post_with_retry(headers, payload, trace=trace)
+                response = await self._post_with_retry(headers, payload, trace=trace, proxy=proxy)
             except _TRANSPORT_ERRORS as exc:
+                if proxy:
+                    await self.proxy_pool.mark_failure(proxy, rate_limited=False)
                 last_transport = exc
                 pool.mark_failed(gk)
                 metrics.errors_by_key.labels(key=key_hash(gk), code="transport").inc()
@@ -621,6 +645,10 @@ class GoogleTranslateProvider(BaseProvider):
                 continue
             if response.status_code in _KEY_FAILOVER_STATUS:
                 # Key 凭证/配额失效: 标记失败并切换到下一 Key
+                if proxy:
+                    await self.proxy_pool.mark_failure(
+                        proxy, rate_limited=response.status_code == 429
+                    )
                 pool.mark_failed(gk)
                 metrics.errors_by_key.labels(key=key_hash(gk), code=str(response.status_code)).inc()
                 if record_health:
@@ -628,6 +656,8 @@ class GoogleTranslateProvider(BaseProvider):
                 last_resp = response
                 continue
             if response.status_code != 200:
+                if proxy:
+                    await self.proxy_pool.mark_failure(proxy, rate_limited=False)
                 if record_health:
                     self._record_upstream_failure(str(response.status_code))
                 metrics.errors_by_key.labels(key=key_hash(gk), code=str(response.status_code)).inc()
@@ -640,6 +670,8 @@ class GoogleTranslateProvider(BaseProvider):
             if record_health and self.circuit_breaker:
                 self.circuit_breaker.record_success()
             pool.mark_success(gk)
+            if proxy:
+                await self.proxy_pool.mark_success(proxy)
             if trace is not None:
                 trace["used_key"] = key_hash(gk)
                 trace["upstream_status"] = response.status_code
@@ -696,7 +728,11 @@ class GoogleTranslateProvider(BaseProvider):
             self.circuit_breaker.record_failure()
 
     async def _post_with_retry(
-        self, headers: dict[str, str], payload: Any, trace: dict[str, Any] | None = None
+        self,
+        headers: dict[str, str],
+        payload: Any,
+        trace: dict[str, Any] | None = None,
+        proxy: str | None = None,
     ) -> httpx.Response:
         """M3: 指数退避 + 抖动重试。
 
@@ -715,28 +751,44 @@ class GoogleTranslateProvider(BaseProvider):
         max_backoff = max(0.0, settings.UPSTREAM_RETRY_MAX_BACKOFF)
 
         assert self.client is not None, "provider 未初始化"
+        client = self.client
+        owns_client = False
+        if proxy:
+            # v2.13.0: 每请求独立代理连接, 用完即关; 短连接超时快速失败换下一个代理
+            client = httpx.AsyncClient(
+                proxy=proxy,
+                timeout=httpx.Timeout(
+                    settings.API_REQUEST_TIMEOUT, connect=settings.PROXY_CONNECT_TIMEOUT
+                ),
+                limits=httpx.Limits(max_connections=8, max_keepalive_connections=2),
+            )
+            owns_client = True
         retries = 0
-        for n in range(attempts):
-            if n > 0:
-                retries += 1
-                backoff = min(base * (2 ** (n - 1)), max_backoff) + random.uniform(0, jitter)
-                # 3.D.1 验收: 重试计数入日志, 便于观测瞬时故障
-                logger.warning(f"上游重试第 {n + 1}/{attempts} 次, 退避 {backoff:.2f}s")
-                await asyncio.sleep(backoff)
-            try:
-                resp = await self.client.post(self.upstream_url, headers=headers, json=payload)
-            except _TRANSPORT_ERRORS:
+        try:
+            for n in range(attempts):
+                if n > 0:
+                    retries += 1
+                    backoff = min(base * (2 ** (n - 1)), max_backoff) + random.uniform(0, jitter)
+                    # 3.D.1 验收: 重试计数入日志, 便于观测瞬时故障
+                    logger.warning(f"上游重试第 {n + 1}/{attempts} 次, 退避 {backoff:.2f}s")
+                    await asyncio.sleep(backoff)
+                try:
+                    resp = await client.post(self.upstream_url, headers=headers, json=payload)
+                except _TRANSPORT_ERRORS:
+                    if trace is not None:
+                        trace["retries"] = retries
+                    if n >= attempts - 1:
+                        raise
+                    continue
+                if resp.status_code in _RETRYABLE_STATUS and n < attempts - 1:
+                    continue
                 if trace is not None:
                     trace["retries"] = retries
-                if n >= attempts - 1:
-                    raise
-                continue
-            if resp.status_code in _RETRYABLE_STATUS and n < attempts - 1:
-                continue
-            if trace is not None:
-                trace["retries"] = retries
-            return resp
-        raise httpx.TransportError("upstream unreachable")  # pragma: no cover - 防御性
+                return resp
+            raise httpx.TransportError("upstream unreachable")  # pragma: no cover - 防御性
+        finally:
+            if owns_client:
+                await client.aclose()
 
     async def translate_batch(
         self, texts: list[str], source_lang: str, target_lang: str

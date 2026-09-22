@@ -508,6 +508,20 @@ async def admin_traces(limit: int = 50):
     }
 
 
+@app.get(
+    "/v1/admin/proxy",
+    dependencies=[Depends(verify_api_key)],
+    tags=["管理"],
+    summary="代理池状态 (v2.13.0)",
+)
+async def admin_proxy(page: int = 1, page_size: int = 20):
+    """代理池快照: 总数/住宅/免费/可用/冷却 + 分页条目(脱敏 host:port)。"""
+    if provider.proxy_pool is None:
+        return {"enabled": False, "total": 0, "items": []}
+    pool = provider.proxy_pool
+    return pool.snapshot(page=page, page_size=page_size)
+
+
 def _web_ui() -> HTMLResponse:
     """v2.5.0 管理面板 (原生单文件 UI, 无外部依赖)。"""
     path = Path(__file__).resolve().parent / "app" / "web" / "app.html"

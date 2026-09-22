@@ -37,7 +37,7 @@ async def test_singleflight_same_key_calls_upstream_once(monkeypatch):
     provider = _make_provider(monkeypatch)
     calls = 0
 
-    async def fake_post(headers, payload, trace=None):
+    async def fake_post(headers, payload, trace=None, proxy=None):
         nonlocal calls
         calls += 1
         await asyncio.sleep(0.02)
@@ -60,7 +60,7 @@ async def test_singleflight_different_keys_are_isolated(monkeypatch):
     provider = _make_provider(monkeypatch)
     calls = 0
 
-    async def fake_post(headers, payload, trace=None):
+    async def fake_post(headers, payload, trace=None, proxy=None):
         nonlocal calls
         calls += 1
         await asyncio.sleep(0.01)
@@ -88,7 +88,7 @@ async def test_singleflight_redis_backend_cross_process_gate(monkeypatch):
     provider2.cache = None
     calls = 0
 
-    async def fake_post(headers, payload, trace=None):
+    async def fake_post(headers, payload, trace=None, proxy=None):
         nonlocal calls
         calls += 1
         await asyncio.sleep(0.03)
@@ -172,7 +172,7 @@ async def test_singleflight_release_lock_failure_is_suppressed(monkeypatch):
 
     monkeypatch.setattr(backend, "release_lock", boom)
 
-    async def fake_post(headers, payload, trace=None):
+    async def fake_post(headers, payload, trace=None, proxy=None):
         return _FakeResponse()
 
     monkeypatch.setattr(provider, "_post_with_retry", fake_post)

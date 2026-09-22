@@ -2,6 +2,22 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [2.13.0] - 2026-09-22
+
+### 新增 (代理池轮换)
+
+- `app/core/proxy_pool.py`：住宅文件 + 免费抓取双源；未使用优先 + 健康分 EWMA + 递增冷却 + 每日限额；快照脱敏 host:port
+- 免费代理后台抓取：周期拉取公共列表，并发 `/generate_204` 校验后注入，过期剔除；连接失败自动回退直连
+- provider 接线：每请求 `acquire` 代理出口，429/网络失败 `mark_failure` 冷却并切 Key，成功 `mark_success` 升健康分
+- 新增 `GET /v1/admin/proxy` 状态端点与 Prometheus `proxy_uses_total` / `proxy_results_total`
+- `.env.example` 新增 `PROXY_*` 配置组；新增 `docs/PROXY_POOL.md`
+
+### 验证
+
+- 新增 6 项代理池测试：规整/轮换/冷却/健康/脱敏/过期剔除 + provider 接线（成功与 429 回写）
+- 回归 55 项相关测试通过；ruff / 文档死链全过
+- 生产实测数据见发布说明（含并发 QPS、0 错/429 情况与代理快照）
+
 ## [2.12.6] - 2026-09-22
 
 ### 优化 (网关加固)

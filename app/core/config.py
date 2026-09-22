@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     )
 
     APP_NAME: str = "googletranslate-2api"
-    APP_VERSION: str = "2.12.6"
+    APP_VERSION: str = "2.13.0"
     DESCRIPTION: str = "一个将 Google Translate API 转换为兼容 OpenAI 格式的代理。"
 
     API_MASTER_KEY: str | None = None
@@ -114,6 +114,25 @@ class Settings(BaseSettings):
     RATE_LIMIT_TTL: int = 3600
     # 可信反代后取 X-Forwarded-For 首跳做 IP 维度 (P2-3); 默认关, 防伪造
     TRUST_PROXY_HEADER: bool = False
+
+    # --- v2.13.0: 代理池 (住宅文件 + 免费抓取轮换, 解决上游按 IP 高并发风控) ---
+    PROXY_ENABLED: bool = False
+    # 住宅代理文件: 每行一个, 支持 host:port / user:pass@host:port / http(s)://...
+    PROXY_FILE: str = "data/proxies.txt"
+    # 后台抓取免费代理并校验注入
+    PROXY_FREE_FETCH: bool = False
+    PROXY_FREE_REFRESH_SECONDS: int = 600
+    # 逗号分隔的免费代理列表 URL, 留空用内置默认源
+    PROXY_FREE_URLS: str = ""
+    # 每个代理每日最大使用次数, 0=不限
+    PROXY_MAX_USE_PER_DAY: int = 200
+    # 递增冷却秒数 (第1..N次使用后), 逗号分隔
+    PROXY_USE_COOLDOWN_MAP: str = "0,10,30,90,300"
+    # 代理健康校验目标 (短超时, 不消耗翻译配额)
+    PROXY_VALIDATE_URL: str = "https://www.gstatic.com/generate_204"
+    PROXY_VALIDATE_TIMEOUT: float = 5.0
+    # 走代理的上游连接超时 (秒)
+    PROXY_CONNECT_TIMEOUT: float = 8.0
 
     # --- M12 指标 ---
     METRICS_ENABLED: bool = True

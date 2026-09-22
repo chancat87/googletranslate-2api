@@ -44,6 +44,8 @@ class Metrics:
         self.requests_by_key: Any
         self.errors_by_key: Any
         self.key_pool_status: Any
+        self.proxy_uses: Any
+        self.proxy_results: Any
         if not (settings.METRICS_ENABLED and _HAS_PROMETHEUS):
             self.enabled = False
             self.translate_requests = _NullMetric()
@@ -56,6 +58,8 @@ class Metrics:
             self.requests_by_key = _NullMetric()
             self.errors_by_key = _NullMetric()
             self.key_pool_status = _NullMetric()
+            self.proxy_uses = _NullMetric()
+            self.proxy_results = _NullMetric()
             return
         self.enabled = True
         self.translate_requests = Counter(
@@ -78,6 +82,9 @@ class Metrics:
             "按上游 Key 哈希的上游错误数",
             ["key", "code"],
         )
+        # v2.13.0: 代理池使用与轮换成效
+        self.proxy_uses = Counter("proxy_uses_total", "代理使用次数", ["source"])
+        self.proxy_results = Counter("proxy_results_total", "代理请求结果", ["source", "result"])
         self.key_pool_status = Gauge(
             "translate_key_pool_status", "上游 Key 池状态 (1=可用 0=冷却)", ["key", "state"]
         )
