@@ -32,6 +32,10 @@ Google 上游会按出口 IP 限制高并发。多 Key 只能解决“Key 维度
 | `PROXY_MAX_USE_PER_DAY` | 200 | 每代理每日最大使用次数 |
 | `PROXY_USE_COOLDOWN_MAP` | `0,10,30,90,300` | 递增冷却秒数 |
 | `PROXY_VALIDATE_URL` | `https://www.gstatic.com/generate_204` | 健康校验目标 |
+| `PROXY_VALIDATE_TIMEOUT` | 5.0 | 单代理校验超时 |
+| `PROXY_VALIDATE_CONCURRENCY` | 10 | 免费代理校验并发（分批，防 1 核启动被拖垮） |
+| `PROXY_VALIDATE_SAMPLE` | 200 | 每轮最多校验的免费代理数 |
+| `PROXY_VALIDATE_PACE` | 0.02 | 校验批次间隔秒数 |
 | `PROXY_CONNECT_TIMEOUT` | 8.0 | 走代理的连接超时 |
 | `PROXY_REQUEST_TIMEOUT` | 10.0 | 走代理的整体请求超时（免费代理慢，设短值快速换下一个） |
 | `PROXY_MAX_INFLIGHT` | 50 | 代理请求并发上限，0=不限 |

@@ -2,6 +2,17 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [2.13.4] - 2026-09-22
+
+### 优化 (免费代理校验限流)
+
+- 免费代理校验改为分批执行：`PROXY_VALIDATE_CONCURRENCY`(默认10) + `PROXY_VALIDATE_SAMPLE`(默认200) + `PROXY_VALIDATE_PACE`(默认0.02s)
+- 避免 1 核生产机启动时上千代理并发校验拖慢 `/ready` 就绪（此前 upgrade 曾因此就绪超时）
+
+### 验证
+
+- mypy / ruff 通过；代理池单测保持通过；生产升级后就绪恢复验收见发布说明
+
 ## [2.13.3] - 2026-09-22
 
 ### 优化 (代理超时与并发保护)

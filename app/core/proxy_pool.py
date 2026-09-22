@@ -245,6 +245,14 @@ async def validate_proxy(url: str) -> bool:  # pragma: no cover - 网络校验, 
         return False
 
 
+async def _validate_and_mark(pool: ProxyPool, url: str) -> None:  # pragma: no cover - 网络校验
+    ok = await validate_proxy(url)
+    if ok:
+        await pool.mark_success(url)
+    else:
+        await pool.mark_failure(url, rate_limited=False)
+
+
 async def free_proxy_fetcher_loop(
     pool: ProxyPool,
 ) -> None:  # pragma: no cover - 后台网络抓取, 由生产 E2E 覆盖
@@ -266,16 +274,11 @@ async def free_proxy_fetcher_loop(
                     continue
         added = pool.add_many(fresh, source="free")
         if added:
-            sem = asyncio.Semaphore(20)
-
-            async def _check(url: str, sem: asyncio.Semaphore = sem) -> None:
-                async with sem:
-                    ok = await validate_proxy(url)
-                    if ok:
-                        await pool.mark_success(url)
-                    else:
-                        await pool.mark_failure(url, rate_limited=False)
-
-            await asyncio.gather(*(_check(u) for u in fresh[:200]))
+            sample = fresh[: max(1, settings.PROXY_VALIDATE_SAMPLE)]
+            concurrency = max(1, settings.PROXY_VALIDATE_CONCURRENCY)
+            for i in range(0, len(sample), concurrency):
+                chunk = sample[i : i + concurrency]
+                await asyncio.gather(*(_validate_and_mark(pool, u) for u in chunk))
+                await asyncio.sleep(max(0.0, settings.PROXY_VALIDATE_PACE))
         pool.reap_free()
         await asyncio.sleep(refresh)
