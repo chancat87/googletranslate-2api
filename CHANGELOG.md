@@ -2,6 +2,17 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [2.11.1] - 2026-09-22
+
+### 修复 (Deploy 版本解析兼容 Python 3.10)
+
+- `deploy.yml` 生产镜像版本号改为正则解析 `pyproject.toml`，不再依赖 Python 3.11+ 的 `tomllib`
+- runner 使用 Python 3.10 时生产构建不再报 `ModuleNotFoundError: tomllib`
+
+### 验证
+
+- Deploy workflow 生产构建步骤本地逻辑校验通过；GHCR 登录与镜像推送通过后即绿
+
 ## [2.11.0] - 2026-09-22
 
 ### 新增 (完整 CI/CD 管线)

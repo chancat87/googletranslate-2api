@@ -82,7 +82,7 @@ jobs:
 
       - name: Build and push production image
         run: |
-          VER=$(python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          VER=$(python -c "import re,pathlib;print(re.search(r'^version = \"([^\"]+)\"', pathlib.Path('pyproject.toml').read_text(encoding='utf-8'), re.M).group(1))")
           IMAGE="$REGISTRY/$IMAGE_NAME:v$VER"
           docker build -t "$IMAGE" -t "$REGISTRY/$IMAGE_NAME:main-${GITHUB_SHA::8}" .
           docker push "$IMAGE"
