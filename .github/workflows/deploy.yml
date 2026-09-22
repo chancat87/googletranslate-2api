@@ -1,0 +1,139 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 目标环境 (staging / production)
+        required: true
+        default: staging
+        type: choice
+        options: [staging, production]
+      revision:
+        description: 回滚目标 revision (留空 = 回滚到上一个版本, 仅回滚任务使用)
+        required: false
+        type: string
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  deploy-staging:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+    environment: staging
+    env:
+      KUBECONFIG_B64: ${{ secrets.KUBE_CONFIG_STAGING }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Login GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login $REGISTRY -u ${{ github.actor }} --password-stdin
+
+      - name: Build and push staging image
+        run: |
+          IMAGE="$REGISTRY/$IMAGE_NAME:staging-${GITHUB_SHA::8}"
+          docker build -t "$IMAGE" -t "$REGISTRY/$IMAGE_NAME:staging-latest" .
+          docker push "$IMAGE"
+          docker push "$REGISTRY/$IMAGE_NAME:staging-latest"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      - uses: azure/setup-kubectl@v4
+
+      - name: Deploy to staging
+        if: env.KUBECONFIG_B64 != ''
+        run: bash scripts/ci/kubectl_deploy.sh staging "$IMAGE"
+
+      - name: Skip staging deploy (未配置 KUBE_CONFIG_STAGING)
+        if: env.KUBECONFIG_B64 == ''
+        run: echo "未配置 KUBE_CONFIG_STAGING, 仅构建并推送镜像, 跳过实际部署"
+
+  deploy-production:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    # 手动审批: 在 GitHub 仓库 Settings -> Environments -> production 中配置 required reviewers
+    environment: production
+    env:
+      KUBECONFIG_B64: ${{ secrets.KUBE_CONFIG_PRODUCTION }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Login GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login $REGISTRY -u ${{ github.actor }} --password-stdin
+
+      - name: Build and push production image
+        run: |
+          VER=$(python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          IMAGE="$REGISTRY/$IMAGE_NAME:v$VER"
+          docker build -t "$IMAGE" -t "$REGISTRY/$IMAGE_NAME:main-${GITHUB_SHA::8}" .
+          docker push "$IMAGE"
+          docker push "$REGISTRY/$IMAGE_NAME:main-${GITHUB_SHA::8}"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      - uses: azure/setup-kubectl@v4
+
+      - name: Deploy to production
+        if: env.KUBECONFIG_B64 != ''
+        run: bash scripts/ci/kubectl_deploy.sh production "$IMAGE"
+
+      - name: Skip production deploy (未配置 KUBE_CONFIG_PRODUCTION)
+        if: env.KUBECONFIG_B64 == ''
+        run: echo "未配置 KUBE_CONFIG_PRODUCTION, 仅构建并推送镜像, 跳过实际部署"
+
+  rollback:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    environment: production
+    env:
+      KUBECONFIG_B64: ${{ secrets.KUBE_CONFIG_PRODUCTION }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-kubectl@v4
+
+      - name: Rollback production deployment
+        if: env.KUBECONFIG_B64 != ''
+        run: bash scripts/ci/kubectl_rollback.sh production "${{ github.event.inputs.revision }}"
+
+      - name: Skip rollback (未配置 KUBE_CONFIG_PRODUCTION)
+        if: env.KUBECONFIG_B64 == ''
+        run: echo "未配置 KUBE_CONFIG_PRODUCTION, 跳过回滚"
+
+  notify:
+    runs-on: ubuntu-latest
+    needs: [deploy-staging, deploy-production, rollback]
+    if: failure()
+    steps:
+      - name: Send Slack failure notification
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+          REF: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$SLACK_WEBHOOK" ]; then
+            echo "SLACK_WEBHOOK 未配置, 跳过通知"
+            exit 0
+          fi
+          curl -fsS -X POST -H 'Content-Type: application/json' \
+            -d "{\"text\":\"❌ Deploy 失败\\n仓库: ${{ github.repository }}\\n工作流: ${{ github.workflow }}\\n分支: $REF\\n提交: ${SHA:0:8}\\n查看: $RUN_URL\"}" \
+            "$SLACK_WEBHOOK"

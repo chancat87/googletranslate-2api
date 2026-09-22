@@ -2,6 +2,21 @@
 
 本项目所有显著变更均记录于此。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [2.11.0] - 2026-09-22
+
+### 新增 (完整 CI/CD 管线)
+
+- `ci.yml`：pip 依赖缓存、Workflow 并发取消、coverage.xml 工件、pip-audit 依赖漏洞扫描、Slack 失败通知
+- `deploy.yml`：develop 自动部署 staging；main 经 Environment 人工审批部署 production；手动 rollback 任务；Slack 失败通知
+- 新增 `scripts/ci/kubectl_deploy.sh` / `kubectl_rollback.sh`：命名空间、kustomize 应用、切镜像、rolling status、rollback undo
+- 集群未配置 `KUBE_CONFIG_*` 时自动跳过实际部署，仅构建推送 GHCR 镜像，避免新仓库 CI 变红
+- 新增 `docs/CI_CD_PIPELINE.md`：ASCII 流程、分支策略、Secrets 表、回滚策略、性能优化与故障排查
+
+### 验证
+
+- 两个 workflow YAML 语法校验通过；bash 脚本语法校验通过
+- 全量回归保持 308 passed / 1 skipped，覆盖率 98.94%
+
 ## [2.10.1] - 2026-09-22
 
 ### 修复 (根路径直接打开 Web UI)
