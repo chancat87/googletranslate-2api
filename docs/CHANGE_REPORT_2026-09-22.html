@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>googletranslate-2api v2.12.3 变更报告</title>
+<title>googletranslate-2api v2.13.3 变更报告</title>
 <style>
   :root {
     --bg: #f5f7fa; --surface: #ffffff; --surface2: #eef2f6;
@@ -58,7 +58,7 @@
 <div class="wrap">
   <button class="theme-toggle" onclick="toggleTheme()">切换深色/浅色</button>
   <header class="hero">
-    <h1>googletranslate-2api v2.12.3 变更报告</h1>
+    <h1>googletranslate-2api v2.13.3 变更报告</h1>
     <p><span class="badge">2026-09-22</span> <span class="badge">生产验收 + Spec Kit 规范 + 终局审计</span></p>
     <p>一份让你“看懂这次变更里发生的一切”的报告，底部附 10 题测验，通过才算签收。</p>
   </header>
@@ -82,7 +82,8 @@
         <tr><td>生产公网 E2E</td><td class="ok">`/health` `/ready` `/v1/models`、非流式 + SSE 翻译、Web UI 全部 200</td></tr>
         <tr><td>压测</td><td class="ok">conc 1/5/10 全 200，0 错 0 429，QPS 6.3 / 21.8 / 18.3</td></tr>
         <tr><td>零中断</td><td class="ok">重启单副本 30/30 200；热升级/回滚各 60/60 200</td></tr>
-        <tr><td>版本</td><td class="ok">`GET /health` 返回 version 2.12.3</td></tr>
+        <tr><td>版本</td><td class="ok">`GET /health` 返回 version 2.13.3</td></tr>
+        <tr><td>代理池</td><td class="ok">生产抓取校验 3910 个免费代理；升级 60/60 200；免费代理 QPS 0.1-0.2，200/s 需住宅/付费代理</td></tr>
       </tbody>
     </table>
   </div>
@@ -103,7 +104,7 @@
 
   <h2>六、变更测验（必须通过）</h2>
   <div class="card">
-    <p>共 10 题，答对 8 题及以上为通过。点击“提交答案”查看得分与解析。</p>
+    <p>共 12 题，答对 9 题及以上为通过。点击“提交答案”查看得分与解析。</p>
     <div id="quiz"></div>
     <button class="btn" onclick="submitQuiz()">提交答案</button>
     <div id="score"></div>
@@ -126,12 +127,16 @@ const QUIZ = [
     explain: "conc 1/5/10 对应 QPS 6.3 / 21.8 / 18.3，且全 200、0 错 0 429。" },
   { q: "CI 安全扫描包含哪些？（多选意识题，选最完整项）", opts: ["只有 lint", "Gitleaks + Trivy + SBOM + pip-audit", "只有依赖更新"], a: 1,
     explain: "四条安全闸全部在 security-scan 中执行并可留证据。" },
-  { q: "生产服务器上 `/health` 返回的版本号目前是？", opts: ["2.12.3", "1.0.0", "latest"], a: 0,
-    explain: "v2.12.3 发布后已在服务器热升级并实际核验版本号。" },
+  { q: "生产服务器上 `/health` 返回的版本号目前是？", opts: ["2.13.3", "1.0.0", "latest"], a: 0,
+    explain: "v2.13.3 发布后已在服务器热升级并实际核验版本号。" },
   { q: "Spec Kit 宪法要求的关键非协商项是？", opts: ["Test-First (TDD)", "随便写文档", "不做测试"], a: 0,
     explain: "TDD 与 Honest Closure 为 MUST；覆盖率阈值 97%。" },
   { q: "工作区里有敏感未跟踪文件时该怎么办？", opts: ["全部提交", "不动用户文件，只提交本次产物并说明", "删除后提交"], a: 1,
-    explain: "保留用户未跟踪文件（.cline/、.kiro/、AGENTS.md 等），不纳入提交。" }
+    explain: "保留用户未跟踪文件（.cline/、.kiro/、AGENTS.md 等），不纳入提交。" },
+  { q: "代理池轮换的核心分配策略是什么？", opts: ["随机随便挑", "未使用优先 + 健康分 EWMA + 递增冷却", "永远用第一个"], a: 1,
+    explain: "先选从未用过的出口，再用完一轮后按健康分与冷却选择，坏代理自动降分。" },
+  { q: "免费代理实测能否达到每秒 200 次并发？", opts: ["能", "不能，免费代理 QPS 约 0.1-0.2，需住宅/付费代理", "看心情"], a: 1,
+    explain: "生产分层压测显示免费代理大量 502/超时，诚实披露未达 200/s。" }
 ];
 
 let theme = localStorage.getItem("gt2theme") || "light";
@@ -162,7 +167,7 @@ function submitQuiz() {
     if (user === item.a) { correct += 1; details.push(`<li class="ok">${i + 1}. 正确</li>`); }
     else { details.push(`<li class="danger">${i + 1}. 错误（你的选择：${user === -1 ? "未作答" : item.opts[user]}）→ ${item.explain}</li>`); }
   });
-  const pass = correct >= 8;
+  const pass = correct >= 9;
   document.getElementById("score").innerHTML =
     `得分：${correct} / ${QUIZ.length} ` +
     (pass ? '<span class="ok">✓ 通过</span>' : '<span class="danger">✗ 未通过，请重读报告后重试</span>') +
@@ -183,6 +188,8 @@ renderQuiz();
       <li><strong>v2.12.0：</strong>单机零中断热更新：蓝绿双副本 + nginx 重试 + `upgrade.sh` + 可选 Watchtower。</li>
       <li><strong>v2.12.1：</strong>修复蓝绿 compose 在 1 核服务器上的 `cpus` 兼容问题（`APP_CPUS`）。</li>
       <li><strong>v2.12.2：</strong>生产部署验收审计；本报告 + Spec Kit 规范 + `workflow_status.md` 需求追踪矩阵。</li>
+      <li><strong>v2.12.4-6：</strong>容器/数据库加固（多阶段镜像、read_only/init/no-new-privileges、SQLite 索引）、Redis 断连降级、nginx 网关加固。</li>
+      <li><strong>v2.13.x：</strong>代理池轮换（住宅 + 免费双源、健康分/冷却/每日限额、每请求换出口、10s 超时、并发信号量），生产升级零中断；免费代理压测如实披露边界。</li>
     </ul>
   </div>
 
